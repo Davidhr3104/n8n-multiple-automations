@@ -39,6 +39,17 @@ ICP, vendedores (`salesReps`), umbrales y modos viven en el nodo **Config** (o c
 
 Workflow `Weekly Lead Report`: cron lunes 08:00 o `POST /webhook/weekly-report` para demos. Llega por email (Mailpit).
 
+## Revival de leads
+
+Tres workflows: `Revival · Daily Run` (cron L-V 09:00 o `POST /webhook/revival-run`), `Revival · Send Touch` y `Revival · Handle Reply` (`POST /webhook/revival-reply`).
+
+```bash
+docker exec postgres psql -U automations -d automations -f /db/seed-revival.sql   # datos sintéticos (una vez)
+powershell -File scripts/smoke-revival.ps1 -Clean     # corrida + seguimientos + respuestas + guardas
+```
+
+Parámetros en `build/workflows/revival-config.js` (inactividad, tope por corrida, espaciado, link de booking, modos). Para probar sin inundar de alertas: `REVIVAL_MAX=2` al hacer deploy.
+
 ## Fundación y roadmap
 
 Ver [docs/ROADMAP.md](docs/ROADMAP.md): reintentos con backoff, log en Postgres, idempotencia, errores y aprobación como piezas comunes para las 5 automatizaciones planeadas.
@@ -53,7 +64,7 @@ Ver [docs/ROADMAP.md](docs/ROADMAP.md): reintentos con backoff, log en Postgres,
 ## Tests
 
 ```bash
-npm test        # 46 tests unitarios de lib/ (sin n8n)
+npm test        # 67 tests unitarios de lib/ (sin n8n)
 npm run check   # enlaces, sintaxis del código embebido y orden de las ramas de log en workflows/*.json
 ```
 

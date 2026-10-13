@@ -11,7 +11,7 @@ for (const file of fs.readdirSync(dir).filter(f => f.endsWith('.json'))) {
   const w = JSON.parse(fs.readFileSync(path.join(dir, file), 'utf8'));
   const names = new Set(w.nodes.map(n => n.name));
   const y = Object.fromEntries(w.nodes.map(n => [n.name, n.position[1]]));
-  const isSide = n => n.startsWith('Log · ') || n === 'Mark Idempotency' || n === 'Record Outcome';
+  const isSide = n => n.startsWith('Log · ') || n.startsWith('Side · ') || n === 'Mark Idempotency' || n === 'Record Outcome';
   console.log(`${file}: ${w.nodes.length} nodes`);
 
   for (const [from, c] of Object.entries(w.connections)) {

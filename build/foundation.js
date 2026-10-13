@@ -64,7 +64,7 @@ function Workflow(id, name) {
     // Garantiza el orden de ejecución de las ramas laterales (log, cierre de idempotencia): cada una se coloca por
     // ENCIMA de todos los hermanos de su misma salida (n8n v1 ejecuta de arriba a abajo), esquivando solapes.
     tidy() {
-      const isSide = n => n.name.startsWith('Log · ') || n.name === 'Mark Idempotency';
+      const isSide = n => n.name.startsWith('Log · ') || n.name.startsWith('Side · ') || n.name === 'Mark Idempotency';
       const byName = Object.fromEntries(nodes.map(n => [n.name, n]));
       for (const s of nodes.filter(isSide)) {
         const sibs = [];
@@ -150,4 +150,55 @@ return { json: { ...state, http_response: $input.item.json, http } };`)));
   return decide;
 }
 
-module.exports = { ROOT, embed, CRED, uid, Workflow, code, ifBool, ifEquals, logBranch, httpWithBackoff };
+// ───────────── Helpers para los workflows de revival ─────────────
+const codeAll = jsCode => ({ mode: 'runOnceForAllItems', jsCode });
+
+// Consulta Postgres. `params` es una expresión JS que devuelve el array de parámetros ($1, $2, ...).
+function pg(w, name, position, query, params, extra = {}) {
+  return w.add(name, 'n8n-nodes-base.postgres', 2.6, position,
+    { operation: 'executeQuery', query, options: params ? { queryReplacement: `={{ ${params} }}` } : {} },
+    { credentials: CRED.pg, retryOnFail: true, maxTries: 3, waitBetweenTries: 1000, ...extra });
+}
+
+function respond(w, name, position, statusCode, bodyExpr) {
+  return w.add(name, 'n8n-nodes-base.respondToWebhook', 1.4, position,
+    { respondWith: 'json', responseBody: `={{ JSON.stringify(${bodyExpr}) }}`, options: { responseCode: statusCode } });
+}
+
+// Reclamo atómico de idempotencia: Claim → Result (restaura el estado) → IF is_new.
+// keySql usa $1..$paramCount; el id de ejecución se añade como último parámetro.
+function idempotency(w, o) {
+  const { workflow, position: [x, y], keySql, params, paramCount, stateFrom, claim = 'Claim Idempotency', result = 'Idempotency Result', check } = o;
+  const sql = `WITH k AS (SELECT ${keySql} AS key),
+ins AS (
+  INSERT INTO idempotency_keys (key, workflow, execution_id, status)
+  SELECT key, '${workflow}', $${paramCount + 1}, 'processing' FROM k
+  ON CONFLICT (key) DO UPDATE
+    SET execution_id = EXCLUDED.execution_id, status = 'processing', claimed_at = now(), finished_at = NULL,
+        attempts = idempotency_keys.attempts + 1
+    WHERE idempotency_keys.status = 'failed'
+       OR (idempotency_keys.status = 'processing' AND idempotency_keys.claimed_at < now() - interval '1 hour')
+  RETURNING key
+)
+SELECT (SELECT key FROM k) AS key, EXISTS (SELECT 1 FROM ins) AS is_new`;
+  pg(w, claim, [x, y], sql, `[${params}, $execution.id]`,
+    { notes: 'Reclamo atómico (PRIMARY KEY). Se puede reprocesar si el intento anterior quedó "failed" o "processing" hace más de 1 h.' });
+  w.add(result, 'n8n-nodes-base.code', 2, [x + 240, y], code(
+    `const s = $('${stateFrom}').item.json;
+const r = $input.item.json;
+return { json: { ...s, idem: { key: r.key, is_new: r.is_new === true } } };`));
+  w.add(check, 'n8n-nodes-base.if', 2.2, [x + 480, y], ifBool('={{ $json.idem.is_new }}'));
+  w.link(claim, result).link(result, check);
+  return { claim, result, check };
+}
+
+// Cierre de la clave (rama lateral): solo la ejecución dueña de la clave la cierra.
+function markIdempotency(w, o) {
+  const { position, keyExpr, statusExpr, resultExpr } = o;
+  return pg(w, 'Mark Idempotency', position,
+    'UPDATE idempotency_keys SET status = $2, finished_at = now(), result = $3::jsonb WHERE key = $1 AND execution_id = $4',
+    `[${keyExpr}, ${statusExpr}, JSON.stringify(${resultExpr}), $execution.id]`,
+    { notes: 'Cierra la clave: done, o failed si algo falló (así un reintento sí puede reprocesar).' });
+}
+
+module.exports = { ROOT, embed, CRED, uid, Workflow, code, codeAll, ifBool, ifEquals, logBranch, httpWithBackoff, pg, respond, idempotency, markIdempotency };

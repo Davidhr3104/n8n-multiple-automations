@@ -11,6 +11,9 @@ const builders = [
   require('./workflows/error-handler'),
   require('./workflows/lead-intake'),
   require('./workflows/weekly-report'),
+  require('./workflows/revival-run'),
+  require('./workflows/revival-touch'),
+  require('./workflows/revival-reply'),
 ];
 
 fs.mkdirSync(path.join(ROOT, 'workflows'), { recursive: true });

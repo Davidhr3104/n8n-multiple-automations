@@ -23,7 +23,7 @@ Notas de diseño:
 | # | Automatización | Estado | Qué falta |
 |---|---|---|---|
 | 5 | Calificación de leads + reporte semanal | **HECHA en local (modo mock/live)** — ver abajo | Probar con keys reales (Claude, GHL); contratos de Meta Lead Ads y email sin verificar |
-| 1 | Revival de leads (GHL) | — | Cron/webhook de inactivos, dedupe, mensaje personalizado, clasificador de respuesta, aviso con aprobación, custom fields + link de booking |
+| 1 | Revival de leads (GHL) | **HECHA en local (modo mock/live)** — ver abajo | Probar con keys reales; contratos de GHL (búsqueda de contactos, conversations/messages, custom fields) y del webhook de respuestas entrantes sin verificar |
 | 4 | Soporte con tickets y RAG | — | pgvector (la misma imagen Postgres necesita la extensión), clasificador intención/sentimiento, RAG, escalamiento |
 | 2 | Intake legal (Clio) | — | Extracción de datos del caso, conflicto de interés, matter en Clio |
 | 3 | Pipeline e-commerce (Shopify) | — | Validación SKU/variantes/precios, copy con voz de marca, revisión en Sheets, API Shopify |
@@ -43,6 +43,26 @@ Workflows: `Lead Intake & Qualification (Auditable)` (77 nodos) y `Weekly Lead R
 | Fallo de IA | Lead: `ai_failed` → humano, sin mensaje al lead. Reporte: sale con resumen determinístico y lo declara | Sí |
 
 Defectos encontrados y corregidos durante la #5: `null >= 0` marcaba leads sin tamaño como "bajo el mínimo del ICP"; un `\b` mal escapado dejó caracteres backspace en una regex (el borrador salía en inglés); un lead rechazado por inyección aparecía como "top lead" en el reporte; `temperature: 0` quitado del request a Claude (algunos modelos nuevos lo rechazan — no verificado con key real).
+
+## #1 — Revival de leads (hecha)
+
+Tres workflows: `Revival · Daily Run` (38 nodos), `Revival · Send Touch` (64) y `Revival · Handle Reply` (79). Datos sintéticos en `db/seed-revival.sql` (25 contactos con duplicados, inválidos, bajas, uno reciente y uno con inyección en el historial).
+
+| Pieza | Cómo | Verificado |
+|---|---|---|
+| Selección | SQL (inactivos + toques vencidos) → `lib/revival.js selectCandidates`: inválidos, bajas, duplicados por email/teléfono, ya-en-secuencia, follow-ups primero, tope | Sí |
+| Aprobación del lote | Un email por corrida con quién y qué toque; **sin lote `approved` no sale nada**. Timeout/ambiguo = no aprobado | Sí |
+| Guarda al enviar | Send Touch re-evalúa en el momento: lote aprobado, lista de bajas (otra vez), estado válido, orden de toques. No confía en quien llama | Sí: token falso, lote pendiente, baja por email y por teléfono, toque fuera de orden, toque repetido |
+| Mensaje | Claude (mock en local) a partir del historial (dato NO confiable). Código determinístico: pie de baja, rechazo de URLs / promesas de precio o garantía / mensajes largos | Sí: el historial con inyección quedó **bloqueado**, contacto en `needs_review`, alerta, nada enviado |
+| Secuencia | Hasta 3 toques, espera 3 y 5 días (configurable), estado en `revival_state` | Sí (el reloj se adelanta por SQL; no se esperaron días reales) |
+| Respuestas | Baja detectada **antes de la IA** (determinístico, la IA no puede deshacerla) → clasificación → enrutado fijo. Interés/agendar: el dueño aprueba y el link de booking lo pone el código | Sí: interesado, agendar, STOP, "no me escriban", no interesa, poco claro, repetida, contacto inexistente |
+| Custom fields | Mirror local + (live) PUT a GHL con backoff | Mirror sí; GHL live solo hasta el `401` con token falso |
+| Idempotencia | Por corrida/día, por toque y por respuesta. Concurrencia real: 202 + 200 duplicate | Sí |
+| Fallos | IA caída → no se envía, estado intacto, clave `failed` (se reintenta), alerta. Envío CRM `401` → igual, sin reintentos inútiles. Custom fields live caído → persiste y alerta | Sí |
+
+Defectos encontrados y corregidos: normalización de teléfono (un número de 11+ dígitos sin "+" ya trae su código de país: Bruno aparecía duplicado); un duplicado de alguien ya en secuencia recibía primer toque (ahora `already_in_sequence`); un script mío dejaba el lote cerrado y no probaba las guardas.
+
+Límites: la forma real del webhook de respuestas de GHL, la API de contactos/mensajes/custom fields de GHL y el comportamiento de un SMS real están SIN verificar. En live el envío es SMS (requiere teléfono). Sin horario de silencio ni zona horaria por contacto (pendiente antes de producción). La llamada interna Daily Run → Send Touch usa un token compartido en el Config: en producción, Header Auth real con secreto.
 
 ## Pendiente transversal
 - Panel de métricas sobre `v_run_summary` / `v_daily_metrics` (Next.js + Tailwind, tu stack) — se construye cuando haya 2+ automatizaciones.
