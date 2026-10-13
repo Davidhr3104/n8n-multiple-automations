@@ -4,7 +4,7 @@
   "nodes": [
     {
       "parameters": {},
-      "id": "00000000-0000-4000-8000-000000000041",
+      "id": "00000000-0000-4000-8000-000000000001",
       "name": "Error Trigger",
       "type": "n8n-nodes-base.errorTrigger",
       "typeVersion": 1,
@@ -26,13 +26,13 @@
           "appendAttribution": false
         }
       },
-      "id": "00000000-0000-4000-8000-000000000042",
+      "id": "00000000-0000-4000-8000-000000000002",
       "name": "Alert Owner",
       "type": "n8n-nodes-base.emailSend",
       "typeVersion": 2.1,
       "position": [
         260,
-        0
+        -60
       ],
       "credentials": {
         "smtp": {
@@ -40,12 +40,44 @@
           "name": "Mailpit (local SMTP)"
         }
       }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO execution_log (run_id, workflow, entity_id, step, status, error, detail) VALUES ($1, $2, NULLIF($3, ''), $4, $5, NULLIF($6, ''), $7::jsonb)",
+        "options": {
+          "queryReplacement": "={{ [$json.execution.id, \"error-handler\", ($json.workflow.name) ?? '', \"workflow_error\", 'failed', (($json.execution.lastNodeExecuted || 'unknown node') + ': ' + $json.execution.error.message) ?? '', JSON.stringify(({ workflow: $json.workflow.name, url: $json.execution.url }))] }}"
+        }
+      },
+      "id": "00000000-0000-4000-8000-000000000003",
+      "name": "Log · workflow_error",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        0,
+        -190
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "postgresLocal01",
+          "name": "Postgres local (automations)"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000,
+      "notes": "Log de ejecución (Postgres). Rama lateral."
     }
   ],
   "connections": {
     "Error Trigger": {
       "main": [
         [
+          {
+            "node": "Log · workflow_error",
+            "type": "main",
+            "index": 0
+          },
           {
             "node": "Alert Owner",
             "type": "main",

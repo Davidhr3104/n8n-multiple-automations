@@ -8,19 +8,21 @@ Webhook → Config → Validar → 202/422
    → Reglas (determinístico) → Claude o Mock (juicio) → Compuerta (determinístico)
    → ¿necesita humano? ─sí→ Email Aprobar/Rechazar → ¿aprobado?
    → CRM (GoHighLevel o mock) → ¿hot? → notificar → Auditoría (./audit/<lead_id>.json) → Assert
-Cualquier error → Global Error Handler → email de alerta
+Cada paso → Postgres (execution_log) · clave de idempotencia por lead · cualquier error → Global Error Handler → log + email
 ```
 
 ## Arranque
 
 ```bash
-docker compose up -d          # n8n :5678, Mailpit :8025
-powershell -File scripts/deploy.ps1   # build + importa credenciales/workflows + publica + reinicia
+docker compose up -d          # n8n :5678, Mailpit :8025, Postgres :5432
+powershell -File scripts/deploy.ps1 -WithCredentials   # primera vez: build + importa credenciales y workflows + publica + reinicia
+powershell -File scripts/deploy.ps1                    # después: sin -WithCredentials, para no pisar tus keys reales
 powershell -File scripts/smoke-test.ps1   # 5 leads de prueba
 ```
 
 - n8n: http://localhost:5678 (crea tu cuenta owner local la primera vez)
 - Emails capturados (aprobaciones, alertas): http://localhost:8025
+- Log por paso: `docker exec postgres psql -U automations -d automations -c "SELECT * FROM v_run_summary"` (mismo SQL que Supabase: `db/init.sql`)
 - Evidencia: carpeta `audit/` (un JSON por lead, incluye reglas, salida de IA, decisión, humano, CRM, ejecución)
 
 ## Dónde conectas tus APIs
@@ -33,6 +35,10 @@ powershell -File scripts/smoke-test.ps1   # 5 leads de prueba
 
 Umbrales y modos viven en el nodo **Config** (o con `AI_MODE=live CRM_MODE=live` al hacer deploy).
 
+## Fundación y roadmap
+
+Ver [docs/ROADMAP.md](docs/ROADMAP.md): reintentos con backoff, log en Postgres, idempotencia, errores y aprobación como piezas comunes para las 5 automatizaciones planeadas.
+
 ## Principios de diseño
 
 - **Determinístico vs. juicio**: `lib/` (normalizar, reglas, compuerta) no usa IA; la IA solo puntúa. La decisión final es de la compuerta.
@@ -43,12 +49,12 @@ Umbrales y modos viven en el nodo **Config** (o con `AI_MODE=live CRM_MODE=live`
 ## Tests
 
 ```bash
-npm test      # 23 tests unitarios de lib/ (sin n8n)
+npm test      # 31 tests unitarios de lib/ (sin n8n)
 ```
 
 ## Estado de verificación (2026-10-13)
 
-Verificado en local con n8n 2.43.4: rutas aprobada/rechazada por humano, automática, inválida, inyección,
+Verificado en local con n8n 2.43.4: idempotencia, log por paso y backoff (ver ROADMAP), rutas aprobada/rechazada por humano, automática, inválida, inyección,
 fallo de IA (401 real de Anthropic con key falsa) y fallo de CRM (401 real de GHL con token falso).
 
 **NO verificado**: respuesta de Claude con una key real (forma del request/tool_use validada solo hasta el 401),

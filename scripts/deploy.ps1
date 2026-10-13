@@ -1,12 +1,20 @@
-# Reconstruye los workflows desde lib/, los importa al n8n local, los publica y reinicia n8n.
+# Reconstruye los workflows desde lib/ y build/, aplica el esquema SQL, importa, publica y reinicia n8n.
 # Requiere: Docker corriendo y `docker compose up -d` ya ejecutado.
+#   -WithCredentials  importa también los PLACEHOLDERS (Anthropic, GHL). Solo la primera vez:
+#                     reimportarlos SOBRESCRIBE tus keys reales.
+param([switch]$WithCredentials)
 $ErrorActionPreference = 'Stop'
 Set-Location (Split-Path $PSScriptRoot -Parent)
 
 npm run build
 if ($LASTEXITCODE -ne 0) { throw 'build failed' }
 
-docker exec n8n n8n import:credentials --input=/import/credentials/credentials.json
+# Esquema (idempotente). Falla ruidosamente si el SQL es inválido.
+docker exec postgres psql -U automations -d automations -v ON_ERROR_STOP=1 -q -f /docker-entrypoint-initdb.d/001-init.sql
+if ($LASTEXITCODE -ne 0) { throw 'schema migration failed' }
+
+docker exec n8n n8n import:credentials --input=/import/credentials/credentials-infra.json
+if ($WithCredentials) { docker exec n8n n8n import:credentials --input=/import/credentials/credentials-placeholders.json }
 docker exec n8n n8n import:workflow --separate --input=/import/workflows
 foreach ($id in 'errhandler000001', 'leadintake000001') { docker exec n8n n8n publish:workflow --id=$id }
 

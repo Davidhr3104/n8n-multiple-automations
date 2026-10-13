@@ -27,7 +27,30 @@ services:
       - ./credentials:/import/credentials:ro
       - ./audit:/files/audit                       # evidencia: un JSON por lead
     depends_on:
-      - mailpit
+      mailpit:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+
+  # Log de ejecuciones + idempotencia. Mismo SQL que Supabase (db/init.sql).
+  postgres:
+    image: postgres:16-alpine
+    container_name: postgres
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=automations
+      - POSTGRES_PASSWORD=automations_local      # solo local: el puerto está ligado a 127.0.0.1
+      - POSTGRES_DB=automations
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+      - ./db/init.sql:/docker-entrypoint-initdb.d/001-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U automations -d automations"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
 
   # Buzón SMTP falso: captura TODOS los emails (aprobaciones, alertas) sin enviarlos fuera.
   mailpit:
@@ -40,3 +63,4 @@ services:
 
 volumes:
   n8n_data:
+  pg_data:
