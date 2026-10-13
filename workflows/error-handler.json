@@ -1,0 +1,71 @@
+{
+  "id": "errhandler000001",
+  "name": "Global Error Handler",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "00000000-0000-4000-8000-000000000041",
+      "name": "Error Trigger",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "email",
+        "operation": "send",
+        "fromEmail": "n8n@localhost",
+        "toEmail": "owner@example.com",
+        "subject": "={{ '[n8n ERROR] ' + $json.workflow.name + ' → ' + ($json.execution.lastNodeExecuted || 'unknown node') }}",
+        "emailFormat": "text",
+        "text": "={{ 'Workflow: ' + $json.workflow.name + '\\nNode: ' + ($json.execution.lastNodeExecuted || 'unknown') + '\\nError: ' + $json.execution.error.message + '\\nExecution: ' + $json.execution.url }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "00000000-0000-4000-8000-000000000042",
+      "name": "Alert Owner",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        260,
+        0
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "smtpMailpit01",
+          "name": "Mailpit (local SMTP)"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Error Trigger": {
+      "main": [
+        [
+          {
+            "node": "Alert Owner",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/Bogota",
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all",
+    "saveManualExecutions": true,
+    "saveExecutionProgress": true
+  },
+  "active": false,
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": false
+  }
+}

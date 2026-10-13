@@ -1,0 +1,9 @@
+{
+  "name": "n8n-auditable-automations",
+  "private": true,
+  "type": "commonjs",
+  "scripts": {
+    "test": "node --test \"test/*.test.js\"",
+    "build": "node build/build.js"
+  }
+}
