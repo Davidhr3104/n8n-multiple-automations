@@ -10,6 +10,7 @@ const ERROR_WORKFLOW_ID = 'errhandler000001';
 const builders = [
   require('./workflows/error-handler'),
   require('./workflows/lead-intake'),
+  require('./workflows/weekly-report'),
 ];
 
 fs.mkdirSync(path.join(ROOT, 'workflows'), { recursive: true });

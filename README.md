@@ -4,10 +4,10 @@ Flujo de captura y calificación de leads con IA **auditable**: reglas determin�
 nivel de confianza y citas verificadas + aprobación humana en casos de riesgo + un archivo de evidencia por lead.
 
 ```
-Webhook → Config → Validar → 202/422
-   → Reglas (determinístico) → Claude o Mock (juicio) → Compuerta (determinístico)
+Webhook (plano / Meta / email) → Config → Validar → idempotencia → 202/422/200
+   → Enriquecer → Reglas vs ICP (determinístico) → Claude o Mock (juicio) → Compuerta (determinístico)
    → ¿necesita humano? ─sí→ Email Aprobar/Rechazar → ¿aprobado?
-   → CRM (GoHighLevel o mock) → ¿hot? → notificar → Auditoría (./audit/<lead_id>.json) → Assert
+   → CRM (GoHighLevel o mock) → ¿hot? → vendedor (round-robin) → aprueba borrador → primer mensaje → Auditoría (./audit/<lead_id>.json) → Assert
 Cada paso → Postgres (execution_log) · clave de idempotencia por lead · cualquier error → Global Error Handler → log + email
 ```
 
@@ -17,7 +17,7 @@ Cada paso → Postgres (execution_log) · clave de idempotencia por lead · cual
 docker compose up -d          # n8n :5678, Mailpit :8025, Postgres :5432
 powershell -File scripts/deploy.ps1 -WithCredentials   # primera vez: build + importa credenciales y workflows + publica + reinicia
 powershell -File scripts/deploy.ps1                    # después: sin -WithCredentials, para no pisar tus keys reales
-powershell -File scripts/smoke-test.ps1   # 5 leads de prueba
+powershell -File scripts/smoke-test.ps1 -Clean -AutoApprove -Report   # 9 leads, aprobaciones automáticas y reporte semanal
 ```
 
 - n8n: http://localhost:5678 (crea tu cuenta owner local la primera vez)
@@ -33,7 +33,11 @@ powershell -File scripts/smoke-test.ps1   # 5 leads de prueba
 | GoHighLevel | Credencial **GoHighLevel (PLACEHOLDER)** | Header Auth: `Authorization` = `Bearer <token>`. Pon `ghlLocationId` y `crmMode: "live"` |
 | Email real | Credencial **Mailpit (local SMTP)** | Cámbiala por tu SMTP cuando salgas de local |
 
-Umbrales y modos viven en el nodo **Config** (o con `AI_MODE=live CRM_MODE=live` al hacer deploy).
+ICP, vendedores (`salesReps`), umbrales y modos viven en el nodo **Config** (o con `AI_MODE=live CRM_MODE=live` al hacer deploy).
+
+## Reporte semanal
+
+Workflow `Weekly Lead Report`: cron lunes 08:00 o `POST /webhook/weekly-report` para demos. Llega por email (Mailpit).
 
 ## Fundación y roadmap
 
@@ -49,7 +53,8 @@ Ver [docs/ROADMAP.md](docs/ROADMAP.md): reintentos con backoff, log en Postgres,
 ## Tests
 
 ```bash
-npm test      # 31 tests unitarios de lib/ (sin n8n)
+npm test        # 46 tests unitarios de lib/ (sin n8n)
+npm run check   # enlaces, sintaxis del código embebido y orden de las ramas de log en workflows/*.json
 ```
 
 ## Estado de verificación (2026-10-13)

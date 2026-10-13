@@ -4,6 +4,7 @@
   "type": "commonjs",
   "scripts": {
     "test": "node --test \"test/*.test.js\"",
-    "build": "node build/build.js"
+    "build": "node build/build.js",
+    "check": "node scripts/check-workflows.js"
   }
 }

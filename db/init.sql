@@ -50,3 +50,27 @@ SELECT date_trunc('day', created_at)::date AS day,
        count(*)           FILTER (WHERE step = 'human_decision')      AS human_reviews
 FROM execution_log
 GROUP BY 1, 2;
+
+-- ───────────── #5 Calificación de leads + reporte semanal ─────────────
+-- Round-robin atómico: nextval() no tiene carreras entre leads simultáneos.
+CREATE SEQUENCE IF NOT EXISTS rep_rr_seq;
+
+-- Un resultado por lead (alimenta el reporte semanal). Contiene PII (email, nombre): aplicar retención/RLS en producción.
+CREATE TABLE IF NOT EXISTS lead_outcomes (
+  lead_id         text PRIMARY KEY,
+  received_at     timestamptz NOT NULL,
+  email           text,
+  name            text,
+  company         text,
+  source          text,
+  industry        text,
+  tier            text,
+  score           integer,
+  status          text        NOT NULL,   -- auto_processed | approved_by_human | rejected_by_human | no_human_response | rejected_invalid | duplicate_skipped | crm_failed
+  needs_human     boolean     NOT NULL DEFAULT false,
+  rep_email       text,
+  outreach_status text,                   -- sent | rep_rejected | rep_no_response | skipped | send_failed
+  execution_id    text,
+  updated_at      timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS lead_outcomes_received_idx ON lead_outcomes (received_at);
