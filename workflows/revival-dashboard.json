@@ -1,0 +1,194 @@
+{
+  "id": "revivaldash00001",
+  "name": "Revival · Dashboard (Auditable)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "revival-dashboard",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "00000000-0000-4000-8000-000000000438",
+      "name": "Dashboard Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        100
+      ],
+      "webhookId": "00000000-0000-4000-8000-000000000437",
+      "notes": "GET /webhook/revival-dashboard?days=7|30|all. Solo lectura sobre Postgres. Sin scripts ni recursos externos."
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const q = $input.item.json.query || {};\nconst days = ['7', '30', 'all'].includes(q.days) ? q.days : '7';\nreturn { json: { days, config: {\"aiMode\":\"mock\",\"crmMode\":\"mock\",\"model\":\"claude-sonnet-5-5\",\"inactivityDays\":90,\"maxPerRun\":10,\"maxTouches\":3,\"gapDays\":[3,5],\"defaultCountryCode\":\"57\",\"bookingUrl\":\"https://cal.example.com/book/demo\",\"senderName\":\"Equipo Demo\",\"ownerEmail\":\"owner@example.com\",\"fromEmail\":\"n8n@localhost\",\"approvalTimeoutHours\":24,\"replyConfidenceThreshold\":0.6,\"internalToken\":\"local-dev-token\",\"prepareUrl\":\"http://localhost:5678/webhook/revival-prepare\",\"touchUrl\":\"http://localhost:5678/webhook/revival-touch\",\"publicBaseUrl\":\"http://localhost:5678\",\"ghlLocationId\":\"TU_GHL_LOCATION_ID\",\"defaultTimezone\":\"America/Bogota\",\"sendWindow\":{\"startHour\":9,\"endHour\":19,\"weekdays\":[1,2,3,4,5]},\"dataLabel\":\"TEST DATA · synthetic contacts\"} } };"
+      },
+      "id": "00000000-0000-4000-8000-000000000439",
+      "name": "Parse Query",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        100
+      ],
+      "notes": "Solo acepta 7, 30 o all; cualquier otro valor cae a 7. El valor entra a SQL como parámetro, nunca concatenado."
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH p AS (\n  SELECT CASE WHEN $1::text ~ '^[0-9]+$' THEN now() - make_interval(days => $1::text::int) END AS since,\n         CASE WHEN $1::text ~ '^[0-9]+$' THEN $1::text::int END AS days\n), dr AS (\n  SELECT d.* FROM revival_drafts d, p WHERE p.since IS NULL OR d.created_at >= p.since\n), msg AS (\n  SELECT m.* FROM revival_messages m, p WHERE p.since IS NULL OR m.created_at >= p.since\n)\nSELECT\n  to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI') || ' UTC' AS generated_at,\n  (SELECT days FROM p) AS days,\n  jsonb_build_object(\n    'total', (SELECT count(*) FROM dr),\n    'sent', (SELECT count(*) FROM dr WHERE status = 'sent'),\n    'approved', (SELECT count(*) FROM dr WHERE status = 'approved'),\n    'deferred', (SELECT count(*) FROM dr WHERE status = 'deferred'),\n    'pending_review', (SELECT count(*) FROM dr WHERE status = 'pending_review'),\n    'skipped', (SELECT count(*) FROM dr WHERE status = 'skipped'),\n    'blocked', (SELECT count(*) FROM dr WHERE status = 'blocked'),\n    'failed', (SELECT count(*) FROM dr WHERE status = 'failed'),\n    'edited', (SELECT count(*) FROM dr WHERE edited AND status IN ('approved','deferred','sent'))\n  ) AS drafts,\n  jsonb_build_object(\n    'messaged', (SELECT count(DISTINCT contact_id) FROM msg WHERE direction = 'out' AND status IN ('sent','booking_sent')),\n    'active', (SELECT count(*) FROM revival_state WHERE status = 'active'),\n    'completed', (SELECT count(*) FROM revival_state WHERE status = 'completed'),\n    'booking_sent', (SELECT count(*) FROM revival_state WHERE status = 'booking_sent'),\n    'not_interested', (SELECT count(*) FROM revival_state WHERE status = 'not_interested'),\n    'opted_out', (SELECT count(*) FROM revival_state WHERE status = 'opted_out'),\n    'needs_review', (SELECT count(*) FROM revival_state WHERE status = 'needs_review')\n  ) AS contacts,\n  jsonb_build_object(\n    'total', (SELECT count(*) FROM msg WHERE direction = 'in'),\n    'contacts_replied', (SELECT count(DISTINCT contact_id) FROM msg WHERE direction = 'in'),\n    'by_label', COALESCE((SELECT jsonb_agg(jsonb_build_object('label', classification, 'n', n) ORDER BY n DESC)\n        FROM (SELECT classification, count(*) AS n FROM msg WHERE direction = 'in' AND classification IS NOT NULL GROUP BY 1) x), '[]'::jsonb)\n  ) AS replies,\n  COALESCE((SELECT jsonb_agg(jsonb_build_object('touch', touch, 'sent', n) ORDER BY touch)\n      FROM (SELECT touch, count(*) AS n FROM dr WHERE status = 'sent' GROUP BY 1) x), '[]'::jsonb) AS touches,\n  COALESCE((SELECT jsonb_agg(jsonb_build_object('batch_id', batch_id, 'status', status, 'size', size, 'sent', sent, 'skipped', skipped,\n        'created_at', to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI') || ' UTC') ORDER BY created_at DESC)\n      FROM (SELECT b.batch_id, b.status, b.size, b.created_at,\n              (SELECT count(*) FROM revival_drafts d WHERE d.batch_id = b.batch_id AND d.status = 'sent') AS sent,\n              (SELECT count(*) FROM revival_drafts d WHERE d.batch_id = b.batch_id AND d.status = 'skipped') AS skipped\n            FROM revival_batches b, p WHERE p.since IS NULL OR b.created_at >= p.since ORDER BY b.created_at DESC LIMIT 8) x), '[]'::jsonb) AS batches,\n  COALESCE((SELECT jsonb_agg(jsonb_build_object('step', step, 'n', n) ORDER BY n DESC)\n      FROM (SELECT l.step, count(*) AS n FROM execution_log l, p WHERE l.status = 'failed' AND l.workflow LIKE 'revival%'\n              AND (p.since IS NULL OR l.created_at >= p.since) GROUP BY 1 LIMIT 10) x), '[]'::jsonb) AS failures",
+        "options": {
+          "queryReplacement": "={{ [$json.days] }}"
+        }
+      },
+      "id": "00000000-0000-4000-8000-000000000440",
+      "name": "Load Metrics",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        480,
+        100
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "postgresLocal01",
+          "name": "Postgres local (automations)"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000,
+      "notes": "Una sola consulta de solo lectura: todas las cifras salen de las mismas tablas que el log de auditoría."
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const __libs = {};\nconst { esc, BASE_CSS } = (() => {\n  const module = { exports: {} };\n// Revisión por lead: la página que muestra los borradores REALES (ya generados) y la lógica que procesa lo que el dueño decide.\n// Todo dato de CRM/lead es no confiable: se escapa SIEMPRE. Si algo es ambiguo, se salta (falla cerrado).\nconst esc = v => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\"/g, '&quot;').replace(/'/g, '&#39;');\n\n// Estilos compartidos (sistema de diseño: panel denso, azul + acento ámbar, foco visible, sin fuentes ni scripts externos).\nconst BASE_CSS = `\n:root{--bg:#f8fafc;--surface:#fff;--fg:#0f172a;--muted:#475569;--border:#cbd5e1;--primary:#1e40af;--on-primary:#fff;--accent:#b45309;--accent-bg:#fef3c7;--ok:#166534;--ok-bg:#dcfce7;--bad:#b91c1c;--bad-bg:#fee2e2;--ring:#1e40af;--radius:10px}\n@media (prefers-color-scheme:dark){:root{--bg:#0b1220;--surface:#111a2e;--fg:#e2e8f0;--muted:#94a3b8;--border:#2a3a5c;--primary:#60a5fa;--on-primary:#0b1220;--accent:#fbbf24;--accent-bg:#3a2a07;--ok:#86efac;--ok-bg:#0f2f1b;--bad:#fca5a5;--bad-bg:#3b1313;--ring:#93c5fd}}\n*{box-sizing:border-box}html{-webkit-text-size-adjust:100%}\nbody{margin:0;background:var(--bg);color:var(--fg);font:16px/1.5 ui-sans-serif,system-ui,\"Segoe UI\",Roboto,Helvetica,Arial,sans-serif}\na{color:var(--primary)}\n.skip{position:absolute;left:-999px;top:8px;background:var(--primary);color:var(--on-primary);padding:8px 12px;border-radius:6px;z-index:10}.skip:focus{left:8px}\n:focus-visible{outline:3px solid var(--ring);outline-offset:2px}\nheader.top{border-bottom:1px solid var(--border);background:var(--surface)}\n.wrap{max-width:960px;margin:0 auto;padding:16px}\nh1{font-size:1.4rem;line-height:1.25;margin:0 0 4px}h2{font-size:1.05rem;margin:0}\n.sub{color:var(--muted);margin:0;font-size:.95rem}\n.banner{display:inline-block;background:var(--accent-bg);color:var(--accent);border:1px solid var(--accent);border-radius:999px;padding:2px 10px;font-size:.8rem;font-weight:700;letter-spacing:.04em}\n.mono{font-family:ui-monospace,Consolas,\"Cascadia Mono\",monospace;font-size:.85rem}\n.chips{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0}\n.chip{border:1px solid var(--border);background:var(--surface);border-radius:999px;padding:2px 12px;font-size:.9rem}\n.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;margin:12px 0}\n.card.muted{opacity:.92;border-style:dashed}\n.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between}\n.pill{display:inline-block;border-radius:999px;padding:1px 10px;font-size:.8rem;font-weight:700}\n.pill.ok{background:var(--ok-bg);color:var(--ok)}.pill.bad{background:var(--bad-bg);color:var(--bad)}.pill.warn{background:var(--accent-bg);color:var(--accent)}\nlabel{display:block;font-weight:600;margin:10px 0 4px;font-size:.92rem}\ntextarea{width:100%;min-height:96px;padding:10px;border:1px solid var(--border);border-radius:8px;background:var(--bg);color:var(--fg);font:inherit;resize:vertical}\nfieldset{border:0;padding:0;margin:10px 0 0;display:flex;gap:10px;flex-wrap:wrap}\nlegend{position:absolute;left:-999px}\n.choice{display:inline-flex;align-items:center;gap:8px;min-height:44px;padding:0 16px;border:1px solid var(--border);border-radius:8px;cursor:pointer;background:var(--surface);margin:0;font-weight:600}\n.choice input{width:18px;height:18px;accent-color:var(--primary);cursor:pointer}\n.choice:has(input:checked){border-color:var(--primary);box-shadow:inset 0 0 0 1px var(--primary)}\n.note{color:var(--muted);font-size:.88rem;margin:6px 0 0}\nbutton.primary{min-height:48px;padding:0 24px;border:0;border-radius:8px;background:var(--primary);color:var(--on-primary);font:inherit;font-weight:700;cursor:pointer;transition:filter .15s}\nbutton.primary:hover{filter:brightness(1.1)}\n.bar{position:sticky;bottom:0;background:var(--surface);border-top:1px solid var(--border);padding:12px 16px}\n@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}\n`;\n\nconst page = (title, body) => `<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><meta name=\"robots\" content=\"noindex\"><title>${esc(title)}</title><style>${BASE_CSS}</style></head><body>${body}</body></html>`;\n\nfunction renderReviewPage(ctx) {\n  const { batch, drafts, submitUrl, dataLabel } = ctx;\n  const ready = drafts.filter(d => d.status === 'pending_review');\n  const blocked = drafts.filter(d => d.status === 'blocked');\n  const failed = drafts.filter(d => d.status === 'failed');\n\n  const card = d => {\n    const head = `<div class=\"row\"><div><h2>${esc(d.contact_name)}</h2><p class=\"sub\">${esc(d.email || '')}${d.company ? ' · ' + esc(d.company) : ''}</p></div>\n      <div><span class=\"pill warn\">Touch ${esc(d.touch)} · ${d.kind === 'follow_up' ? 'follow-up' : 'new'}</span></div></div>`;\n    if (d.status !== 'pending_review') {\n      return `<section class=\"card muted\" aria-label=\"${esc(d.contact_name)} (not sent)\">${head}\n        <p class=\"note\"><span class=\"pill bad\">${d.status === 'failed' ? 'Failed' : 'Blocked'}</span> ${esc(d.blocked_reason || 'no reason recorded')}. This contact will not be messaged in this batch.</p></section>`;\n    }\n    return `<section class=\"card\" aria-label=\"${esc(d.contact_name)}\">${head}\n      <label for=\"b_${esc(d.id)}\">Message to send (edit if you want)</label>\n      <textarea id=\"b_${esc(d.id)}\" name=\"b_${esc(d.id)}\" rows=\"4\">${esc(d.body_core)}</textarea>\n      <p class=\"note\">An opt-out line is added automatically. Links and price promises are not allowed. ${esc(d.send_note || '')}</p>\n      <fieldset><legend>Decision for ${esc(d.contact_name)}</legend>\n        <label class=\"choice\"><input type=\"radio\" name=\"d_${esc(d.id)}\" value=\"send\" checked> Send</label>\n        <label class=\"choice\"><input type=\"radio\" name=\"d_${esc(d.id)}\" value=\"skip\"> Skip</label>\n      </fieldset></section>`;\n  };\n\n  const body = `<a class=\"skip\" href=\"#review\">Skip to review</a>\n<header class=\"top\"><div class=\"wrap\">\n  <div class=\"row\"><h1>Review revival batch</h1>${dataLabel ? `<span class=\"banner\">${esc(dataLabel)}</span>` : ''}</div>\n  <p class=\"sub\">Batch <span class=\"mono\">${esc(batch.batch_id)}</span> · expires ${esc(batch.expires_at)}. Nothing is sent until you submit. Anything you skip, or leave unclear, is not sent.</p>\n  <div class=\"chips\" role=\"list\"><span class=\"chip\" role=\"listitem\">${ready.length} ready</span><span class=\"chip\" role=\"listitem\">${blocked.length + failed.length} blocked or failed</span><span class=\"chip\" role=\"listitem\">${drafts.length} total</span></div>\n</div></header>\n<main id=\"review\" class=\"wrap\">\n  ${ready.length ? `<form method=\"post\" action=\"${esc(submitUrl)}\"><input type=\"hidden\" name=\"batch\" value=\"${esc(batch.batch_id)}\"><input type=\"hidden\" name=\"token\" value=\"${esc(batch.token)}\">\n    ${drafts.map(card).join('')}\n    <div class=\"bar\"><div class=\"wrap row\"><span class=\"note\">${ready.length} message${ready.length === 1 ? '' : 's'} to decide.</span><button class=\"primary\" type=\"submit\">Submit decisions</button></div></div></form>`\n    : `${drafts.map(card).join('')}<p class=\"card\">There is nothing to send in this batch.</p>`}\n</main>`;\n  return page('Review revival batch', body);\n}\n\n// form: body del POST (claves d_<id> y b_<id>). Devuelve una decisión por cada borrador PENDIENTE del lote; nada más.\nfunction applyReview(drafts, form, finalize) {\n  const decisions = [];\n  const summary = { approved: 0, skipped: 0, edited: 0, rejected_edits: [] };\n  for (const d of drafts.filter(x => x.status === 'pending_review')) {\n    const wantsSend = form[`d_${d.id}`] === 'send';\n    const raw = form[`b_${d.id}`];\n    const core = (typeof raw === 'string' ? raw.replace(/\\r\\n?/g, '\\n').trim() : String(d.body_core || '').trim());\n    const skip = (reason) => { decisions.push({ id: d.id, status: 'skipped', body_core: d.body_core, body: d.body || null, edited: false, reason }); summary.skipped++; };\n\n    if (!wantsSend) { skip('owner_skipped'); continue; }\n    if (!core) { skip('empty_message'); continue; }\n    if (core.length > 2000) { summary.rejected_edits.push({ id: d.id, name: d.contact_name, reason: 'edit_rejected:too_long' }); skip('edit_rejected:too_long'); continue; }\n    const f = finalize(core);\n    if (!f.ok) { const reason = `edit_rejected:${f.issues.join(',')}`; summary.rejected_edits.push({ id: d.id, name: d.contact_name, reason }); skip(reason); continue; }\n    const edited = core !== String(d.body_core || '').trim();\n    decisions.push({ id: d.id, status: 'approved', body_core: core, body: f.text, edited, reason: null });\n    summary.approved++;\n    if (edited) summary.edited++;\n  }\n  return { decisions, summary };\n}\n\nfunction renderResultPage(summary, dataLabel) {\n  const rej = summary.rejected_edits || [];\n  const body = `<a class=\"skip\" href=\"#main\">Skip to content</a>\n<header class=\"top\"><div class=\"wrap\"><div class=\"row\"><h1>Decisions recorded</h1>${dataLabel ? `<span class=\"banner\">${esc(dataLabel)}</span>` : ''}</div>\n<p class=\"sub\">The approved messages are being sent now, inside each contact's local sending hours.</p></div></header>\n<main id=\"main\" class=\"wrap\">\n  <div class=\"chips\"><span class=\"chip\"><span class=\"pill ok\">${esc(summary.approved)}</span> approved</span><span class=\"chip\">${esc(summary.edited)} edited</span><span class=\"chip\">${esc(summary.skipped)} skipped</span></div>\n  ${rej.length ? `<div class=\"card\"><h2>Edits that were not accepted</h2><p class=\"note\">These messages were skipped because the edited text broke a safety rule (links, price or guarantee promises, or length).</p><ul>${rej.map(r => `<li>${esc(r.name)} — <span class=\"mono\">${esc(r.reason)}</span></li>`).join('')}</ul></div>` : ''}\n  <p class=\"note\">You can close this page.</p>\n</main>`;\n  return page('Decisions recorded', body);\n}\n\nfunction renderMessagePage({ title, message }) {\n  return page(title, `<main class=\"wrap\"><div class=\"card\"><h1>${esc(title)}</h1><p>${esc(message)}</p></div></main>`);\n}\n\nmodule.exports = { esc, BASE_CSS, page, renderReviewPage, applyReview, renderResultPage, renderMessagePage };\n\n  __libs['review'] = module.exports;\n  return module.exports;\n})();\nconst { renderDashboard } = (() => {\n  const module = { exports: {} };\n  const require = n => __libs[String(n).replace(/^\\.\\//, '')];\n// Panel de métricas del revival: HTML estático (sin scripts ni fuentes externas), accesible y con todo dato escapado.\n// Las cifras vienen de SQL; aquí solo se calculan porcentajes (con \"—\" cuando el denominador es 0) y se dibuja.\nconst { esc, BASE_CSS } = require('./review');\n\nconst pct = (n, d) => (d > 0 ? `${Math.round((n / d) * 100)}%` : '—');\nconst num = v => Number(v || 0);\nconst LABELS = { interested: 'Interested', schedule: 'Wants to schedule', not_interested: 'Not interested', unsubscribe: 'Opt-out', unclear: 'Unclear' };\n\nconst DASH_CSS = `\n.grid{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));margin:16px 0}\n.kpi{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:12px 14px}\n.kpi .v{font-size:1.9rem;font-weight:800;line-height:1.1;font-variant-numeric:tabular-nums}\n.kpi .l{color:var(--muted);font-size:.85rem}\n.kpi.alert{border-color:var(--accent)}\nsection.panel{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;margin:16px 0}\n.cols{display:grid;gap:16px;grid-template-columns:repeat(auto-fit,minmax(320px,1fr))}\ntable{border-collapse:collapse;width:100%;font-size:.92rem}\ncaption{text-align:left;font-weight:700;padding:0 0 8px;font-size:1rem}\nth{text-align:left;color:var(--muted);font-size:.78rem;text-transform:uppercase;letter-spacing:.05em;padding:6px 8px;border-bottom:1px solid var(--border)}\ntd{padding:7px 8px;border-bottom:1px solid var(--border);vertical-align:middle}\ntd.n,th.n{text-align:right;font-variant-numeric:tabular-nums}\n.bar{display:block;height:10px;border-radius:5px;background:var(--primary);min-width:2px}\n.barcell{width:42%}\n.scroll{overflow-x:auto}\nnav.period{display:flex;gap:8px;margin:12px 0}\nnav.period a{display:inline-flex;align-items:center;min-height:44px;padding:0 14px;border:1px solid var(--border);border-radius:8px;text-decoration:none;color:var(--fg);background:var(--surface);font-weight:600}\nnav.period a[aria-current=\"page\"]{background:var(--primary);color:var(--on-primary);border-color:var(--primary)}\n.foot{color:var(--muted);font-size:.85rem;margin:20px 0}\n`;\n\nfunction barTable(caption, head, rows, total) {\n  const max = Math.max(1, ...rows.map(r => r.n));\n  return `<div class=\"scroll\"><table><caption>${esc(caption)}</caption><thead><tr><th scope=\"col\">${esc(head)}</th><th scope=\"col\" class=\"n\">Count</th><th scope=\"col\" class=\"barcell\"><span class=\"sr\">Share</span></th></tr></thead><tbody>\n${rows.length ? rows.map(r => `<tr><td>${esc(r.label)}</td><td class=\"n\">${esc(r.n)}</td><td><span class=\"bar\" style=\"width:${Math.round((r.n / max) * 100)}%\" aria-hidden=\"true\"></span></td></tr>`).join('') : '<tr><td colspan=\"3\">Nothing yet.</td></tr>'}\n</tbody>${total === undefined ? '' : `<tfoot><tr><th scope=\"row\">Total</th><td class=\"n\">${esc(total)}</td><td></td></tr></tfoot>`}</table></div>`;\n}\n\nfunction renderDashboard(m, opts = {}) {\n  const { dataLabel = '' } = opts;\n  const c = m.contacts, d = m.drafts, r = m.replies;\n  const interested = (r.by_label || []).filter(x => x.label === 'interested' || x.label === 'schedule').reduce((s, x) => s + num(x.n), 0);\n  const optOuts = num(c.opted_out);\n  const periods = [['7', '7 days'], ['30', '30 days'], ['all', 'All time']];\n  const active = m.days === null || m.days === undefined ? 'all' : String(m.days);\n\n  const kpi = (label, value, extra = '', alert = false) => `<div class=\"kpi${alert ? ' alert' : ''}\"><div class=\"v\">${esc(value)}</div><div class=\"l\">${esc(label)}${extra ? ` <span class=\"note\">${esc(extra)}</span>` : ''}</div></div>`;\n\n  const reviewRows = [\n    ['Sent', d.sent], ['Approved, waiting to send', d.approved], ['Held for sending hours', d.deferred], ['Waiting for your review', d.pending_review],\n    ['Skipped by you', d.skipped], ['Blocked by safety rules', d.blocked], ['Failed', d.failed],\n  ].map(([label, n]) => ({ label, n: num(n) }));\n  const stateRows = [\n    ['In sequence (active)', c.active], ['Sequence completed', c.completed], ['Booking link sent', c.booking_sent], ['Not interested', c.not_interested], ['Opted out', c.opted_out], ['Needs a human', c.needs_review],\n  ].map(([label, n]) => ({ label, n: num(n) }));\n  const replyRows = (r.by_label || []).map(x => ({ label: LABELS[x.label] || x.label, n: num(x.n) }));\n  const touchRows = (m.touches || []).map(t => ({ label: `Touch ${t.touch}`, n: num(t.sent) }));\n\n  const batches = m.batches || [];\n  const failures = m.failures || [];\n  const body = `<a class=\"skip\" href=\"#main\">Skip to content</a>\n<header class=\"top\"><div class=\"wrap\">\n  <div class=\"row\"><h1>Revival console</h1>${dataLabel ? `<span class=\"banner\">${esc(dataLabel)}</span>` : ''}</div>\n  <p class=\"sub\">Lead revival: what was drafted, reviewed, sent and answered. Updated ${esc(m.generated_at)}.</p>\n  <nav class=\"period\" aria-label=\"Period\">${periods.map(([v, l]) => `<a href=\"?days=${v}\"${v === active ? ' aria-current=\"page\"' : ''}>${esc(l)}</a>`).join('')}</nav>\n</div></header>\n<main id=\"main\" class=\"wrap\">\n  <div class=\"grid\" role=\"list\">\n    ${kpi('Messages sent', num(d.sent))}\n    ${kpi('Contacts messaged', num(c.messaged))}\n    ${kpi('Reply rate', pct(num(r.contacts_replied), num(c.messaged)), `${num(r.contacts_replied)} of ${num(c.messaged)}`)}\n    ${kpi('Interested replies', interested)}\n    ${kpi('Booking links sent', num(c.booking_sent), 'not confirmed appointments')}\n    ${kpi('Opt-outs', optOuts)}\n    ${kpi('Waiting for review', num(d.pending_review), '', num(d.pending_review) > 0)}\n    ${kpi('Edited by you', num(d.edited), `${pct(num(d.edited), num(d.sent) + num(d.approved))} of approved`)}\n  </div>\n  <div class=\"cols\">\n    <section class=\"panel\" aria-labelledby=\"h-review\"><h2 id=\"h-review\" class=\"sub\" style=\"font-weight:700\">Review outcome</h2>${barTable('Drafts by outcome', 'Outcome', reviewRows, num(d.total))}</section>\n    <section class=\"panel\" aria-labelledby=\"h-state\"><h2 id=\"h-state\" class=\"sub\" style=\"font-weight:700\">Where contacts are</h2>${barTable('Contacts by sequence state', 'State', stateRows)}</section>\n    <section class=\"panel\" aria-labelledby=\"h-touch\"><h2 id=\"h-touch\" class=\"sub\" style=\"font-weight:700\">Touches sent</h2>${barTable('Messages sent per touch', 'Touch', touchRows)}</section>\n    <section class=\"panel\" aria-labelledby=\"h-reply\"><h2 id=\"h-reply\" class=\"sub\" style=\"font-weight:700\">Replies</h2>${barTable('Replies by type', 'Type', replyRows, num(r.total))}</section>\n  </div>\n  <section class=\"panel\"><div class=\"scroll\"><table><caption>Recent batches</caption><thead><tr><th scope=\"col\">Batch</th><th scope=\"col\">Status</th><th scope=\"col\" class=\"n\">Drafts</th><th scope=\"col\" class=\"n\">Sent</th><th scope=\"col\" class=\"n\">Skipped</th><th scope=\"col\">Created</th></tr></thead><tbody>\n  ${batches.length ? batches.map(b => `<tr><td class=\"mono\">${esc(b.batch_id)}</td><td>${esc(b.status)}</td><td class=\"n\">${esc(b.size)}</td><td class=\"n\">${esc(b.sent)}</td><td class=\"n\">${esc(b.skipped)}</td><td>${esc(b.created_at)}</td></tr>`).join('') : '<tr><td colspan=\"6\">No batches yet.</td></tr>'}\n  </tbody></table></div></section>\n  <section class=\"panel\"><div class=\"scroll\"><table><caption>Pipeline failures</caption><thead><tr><th scope=\"col\">Step</th><th scope=\"col\" class=\"n\">Failures</th></tr></thead><tbody>\n  ${failures.length ? failures.map(f => `<tr><td class=\"mono\">${esc(f.step)}</td><td class=\"n\">${esc(f.n)}</td></tr>`).join('') : '<tr><td colspan=\"2\">No failures in this period.</td></tr>'}\n  </tbody></table></div></section>\n  <p class=\"foot\">Reply rate counts contacts that replied divided by contacts messaged. \"Booking links sent\" counts links approved and sent, not confirmed appointments.</p>\n</main>`;\n  return `<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><meta name=\"robots\" content=\"noindex\"><title>Revival console</title><style>${BASE_CSS}${DASH_CSS}.sr{position:absolute;left:-999px}</style></head><body>${body}</body></html>`;\n}\n\nmodule.exports = { renderDashboard, pct };\n\n  __libs['dashboard'] = module.exports;\n  return module.exports;\n})();\n\nconst cfg = $('Parse Query').item.json.config;\nconst m = $input.item.json;\nreturn { json: { html: renderDashboard(m, { dataLabel: cfg.dataLabel }) } };"
+      },
+      "id": "00000000-0000-4000-8000-000000000441",
+      "name": "Render Dashboard",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        720,
+        100
+      ],
+      "notes": "El HTML se arma en un módulo puro con pruebas. Todo texto se escapa; las cifras con denominador 0 se muestran como \"—\", no como 0%."
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{ $json.html }}",
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "text/html; charset=utf-8"
+              },
+              {
+                "name": "Content-Security-Policy",
+                "value": "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'"
+              },
+              {
+                "name": "Cache-Control",
+                "value": "no-store"
+              },
+              {
+                "name": "X-Content-Type-Options",
+                "value": "nosniff"
+              }
+            ]
+          }
+        }
+      },
+      "id": "00000000-0000-4000-8000-000000000442",
+      "name": "Respond Dashboard",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        960,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## Revival · Dashboard\nRead-only page over Postgres: drafts, review outcomes, replies, opt-outs, failures. Labeled TEST DATA while the data is synthetic.",
+        "width": 960,
+        "height": 110,
+        "color": 7
+      },
+      "id": "00000000-0000-4000-8000-000000000443",
+      "name": "Note 6",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -20,
+        -250
+      ]
+    }
+  ],
+  "connections": {
+    "Dashboard Webhook": {
+      "main": [
+        [
+          {
+            "node": "Parse Query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Query": {
+      "main": [
+        [
+          {
+            "node": "Load Metrics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Metrics": {
+      "main": [
+        [
+          {
+            "node": "Render Dashboard",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Render Dashboard": {
+      "main": [
+        [
+          {
+            "node": "Respond Dashboard",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/Bogota",
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all",
+    "saveManualExecutions": true,
+    "saveExecutionProgress": true,
+    "errorWorkflow": "errhandler000001"
+  },
+  "active": false,
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": false
+  }
+}

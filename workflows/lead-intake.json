@@ -413,7 +413,7 @@
         "operation": "executeQuery",
         "query": "INSERT INTO execution_log (run_id, workflow, entity_id, step, status, error, detail) VALUES ($1, $2, NULLIF($3, ''), $4, $5, NULLIF($6, ''), $7::jsonb)",
         "options": {
-          "queryReplacement": "={{ [$execution.id, \"lead-intake\", ($json.lead_id) ?? '', \"claude_qualification_retry\", 'retrying', ($json.http.reason) ?? '', JSON.stringify(({ attempt: $json.http.attempt, delay_s: $json.http.delay_s, status: $json.http.status }))] }}"
+          "queryReplacement": "={{ [$execution.id, \"lead-intake\", String(($json.lead_id) ?? ''), \"claude_qualification_retry\", 'retrying', ($json.http.reason) ?? '', JSON.stringify(({ attempt: $json.http.attempt, delay_s: $json.http.delay_s, status: $json.http.status }))] }}"
         }
       },
       "id": "00000000-0000-4000-8000-000000000029",
@@ -749,7 +749,7 @@
         "operation": "executeQuery",
         "query": "INSERT INTO execution_log (run_id, workflow, entity_id, step, status, error, detail) VALUES ($1, $2, NULLIF($3, ''), $4, $5, NULLIF($6, ''), $7::jsonb)",
         "options": {
-          "queryReplacement": "={{ [$execution.id, \"lead-intake\", ($json.lead_id) ?? '', \"ghl_upsert_contact_retry\", 'retrying', ($json.http.reason) ?? '', JSON.stringify(({ attempt: $json.http.attempt, delay_s: $json.http.delay_s, status: $json.http.status }))] }}"
+          "queryReplacement": "={{ [$execution.id, \"lead-intake\", String(($json.lead_id) ?? ''), \"ghl_upsert_contact_retry\", 'retrying', ($json.http.reason) ?? '', JSON.stringify(({ attempt: $json.http.attempt, delay_s: $json.http.delay_s, status: $json.http.status }))] }}"
         }
       },
       "id": "00000000-0000-4000-8000-000000000047",
@@ -1194,7 +1194,7 @@
         "operation": "executeQuery",
         "query": "INSERT INTO execution_log (run_id, workflow, entity_id, step, status, error, detail) VALUES ($1, $2, NULLIF($3, ''), $4, $5, NULLIF($6, ''), $7::jsonb)",
         "options": {
-          "queryReplacement": "={{ [$execution.id, \"lead-intake\", ($json.lead_id) ?? '', \"received\", 'ok', ('') ?? '', JSON.stringify(({ valid: $json.validation.ok, warnings: $json.validation.warnings.length }))] }}"
+          "queryReplacement": "={{ [$execution.id, \"lead-intake\", String(($json.lead_id) ?? ''), \"received\", 'ok', ('') ?? '', JSON.stringify(({ valid: $json.validation.ok, warnings: $json.validation.warnings.length }))] }}"
         }
       },
       "id": "00000000-0000-4000-8000-000000000069",
@@ -1221,7 +1221,7 @@
         "operation": "executeQuery",
         "query": "INSERT INTO execution_log (run_id, workflow, entity_id, step, status, error, detail) VALUES ($1, $2, NULLIF($3, ''), $4, $5, NULLIF($6, ''), $7::jsonb)",
         "options": {
-          "queryReplacement": "={{ [$execution.id, \"lead-intake\", ($json.lead_id) ?? '', \"rejected_invalid\", 'skipped', ($json.validation.errors.map(e => e.field + ': ' + e.message).join('; ')) ?? '', JSON.stringify(({}))] }}"
+          "queryReplacement": "={{ [$execution.id, \"lead-intake\", String(($json.lead_id) ?? ''), \"rejected_invalid\", 'skipped', ($json.validation.errors.map(e => e.field + ': ' + e.message).join('; ')) ?? '', JSON.stringify(({}))] }}"
         }
       },
       "id": "00000000-0000-4000-8000-000000000070",
@@ -1248,7 +1248,7 @@
         "operation": "executeQuery",
         "query": "INSERT INTO execution_log (run_id, workflow, entity_id, step, status, error, detail) VALUES ($1, $2, NULLIF($3, ''), $4, $5, NULLIF($6, ''), $7::jsonb)",
         "options": {
-          "queryReplacement": "={{ [$execution.id, \"lead-intake\", ($json.lead_id) ?? '', \"duplicate_skipped\", 'duplicate', ('') ?? '', JSON.stringify(({ idempotency_key: $json.idem.key }))] }}"
+          "queryReplacement": "={{ [$execution.id, \"lead-intake\", String(($json.lead_id) ?? ''), \"duplicate_skipped\", 'duplicate', ('') ?? '', JSON.stringify(({ idempotency_key: $json.idem.key }))] }}"
         }
       },
       "id": "00000000-0000-4000-8000-000000000071",
@@ -1275,7 +1275,7 @@
         "operation": "executeQuery",
         "query": "INSERT INTO execution_log (run_id, workflow, entity_id, step, status, error, detail) VALUES ($1, $2, NULLIF($3, ''), $4, $5, NULLIF($6, ''), $7::jsonb)",
         "options": {
-          "queryReplacement": "={{ [$execution.id, \"lead-intake\", ($json.lead_id) ?? '', \"enriched\", 'ok', ('') ?? '', JSON.stringify(({ fields: $json.lead.enrichment.enriched_fields }))] }}"
+          "queryReplacement": "={{ [$execution.id, \"lead-intake\", String(($json.lead_id) ?? ''), \"enriched\", 'ok', ('') ?? '', JSON.stringify(({ fields: $json.lead.enrichment.enriched_fields }))] }}"
         }
       },
       "id": "00000000-0000-4000-8000-000000000072",
@@ -1302,7 +1302,7 @@
         "operation": "executeQuery",
         "query": "INSERT INTO execution_log (run_id, workflow, entity_id, step, status, error, detail) VALUES ($1, $2, NULLIF($3, ''), $4, $5, NULLIF($6, ''), $7::jsonb)",
         "options": {
-          "queryReplacement": "={{ [$execution.id, \"lead-intake\", ($json.lead_id) ?? '', \"rules_scored\", 'ok', ('') ?? '', JSON.stringify(({ rule_score: $json.rules.rule_score }))] }}"
+          "queryReplacement": "={{ [$execution.id, \"lead-intake\", String(($json.lead_id) ?? ''), \"rules_scored\", 'ok', ('') ?? '', JSON.stringify(({ rule_score: $json.rules.rule_score }))] }}"
         }
       },
       "id": "00000000-0000-4000-8000-000000000073",
@@ -1329,7 +1329,7 @@
         "operation": "executeQuery",
         "query": "INSERT INTO execution_log (run_id, workflow, entity_id, step, status, error, detail) VALUES ($1, $2, NULLIF($3, ''), $4, $5, NULLIF($6, ''), $7::jsonb)",
         "options": {
-          "queryReplacement": "={{ [$execution.id, \"lead-intake\", ($json.lead_id) ?? '', \"ai_assessed\", 'ok', ('') ?? '', JSON.stringify(({ model: $json.ai.assessment.model, fit: $json.ai.assessment.fit_score, confidence: $json.ai.assessment.confidence }))] }}"
+          "queryReplacement": "={{ [$execution.id, \"lead-intake\", String(($json.lead_id) ?? ''), \"ai_assessed\", 'ok', ('') ?? '', JSON.stringify(({ model: $json.ai.assessment.model, fit: $json.ai.assessment.fit_score, confidence: $json.ai.assessment.confidence }))] }}"
         }
       },
       "id": "00000000-0000-4000-8000-000000000074",
@@ -1356,7 +1356,7 @@
         "operation": "executeQuery",
         "query": "INSERT INTO execution_log (run_id, workflow, entity_id, step, status, error, detail) VALUES ($1, $2, NULLIF($3, ''), $4, $5, NULLIF($6, ''), $7::jsonb)",
         "options": {
-          "queryReplacement": "={{ [$execution.id, \"lead-intake\", ($json.lead_id) ?? '', \"ai_assessed\", $json.ai.ok ? 'ok' : 'failed', ($json.ai.error) ?? '', JSON.stringify(({ attempts: $json.http.attempt, fit: $json.ai.ok ? $json.ai.assessment.fit_score : null, confidence: $json.ai.ok ? $json.ai.assessment.confidence : null }))] }}"
+          "queryReplacement": "={{ [$execution.id, \"lead-intake\", String(($json.lead_id) ?? ''), \"ai_assessed\", $json.ai.ok ? 'ok' : 'failed', ($json.ai.error) ?? '', JSON.stringify(({ attempts: $json.http.attempt, fit: $json.ai.ok ? $json.ai.assessment.fit_score : null, confidence: $json.ai.ok ? $json.ai.assessment.confidence : null }))] }}"
         }
       },
       "id": "00000000-0000-4000-8000-000000000075",
@@ -1383,7 +1383,7 @@
         "operation": "executeQuery",
         "query": "INSERT INTO execution_log (run_id, workflow, entity_id, step, status, error, detail) VALUES ($1, $2, NULLIF($3, ''), $4, $5, NULLIF($6, ''), $7::jsonb)",
         "options": {
-          "queryReplacement": "={{ [$execution.id, \"lead-intake\", ($json.lead_id) ?? '', \"decision\", 'ok', ('') ?? '', JSON.stringify(({ tier: $json.decision.tier, score: $json.decision.final_score, needs_human: $json.decision.needs_human, reasons: $json.decision.reasons }))] }}"
+          "queryReplacement": "={{ [$execution.id, \"lead-intake\", String(($json.lead_id) ?? ''), \"decision\", 'ok', ('') ?? '', JSON.stringify(({ tier: $json.decision.tier, score: $json.decision.final_score, needs_human: $json.decision.needs_human, reasons: $json.decision.reasons }))] }}"
         }
       },
       "id": "00000000-0000-4000-8000-000000000076",
@@ -1410,7 +1410,7 @@
         "operation": "executeQuery",
         "query": "INSERT INTO execution_log (run_id, workflow, entity_id, step, status, error, detail) VALUES ($1, $2, NULLIF($3, ''), $4, $5, NULLIF($6, ''), $7::jsonb)",
         "options": {
-          "queryReplacement": "={{ [$execution.id, \"lead-intake\", ($json.lead_id) ?? '', \"approval_requested\", 'waiting', ('') ?? '', JSON.stringify(({ reasons: $json.decision.reasons }))] }}"
+          "queryReplacement": "={{ [$execution.id, \"lead-intake\", String(($json.lead_id) ?? ''), \"approval_requested\", 'waiting', ('') ?? '', JSON.stringify(({ reasons: $json.decision.reasons }))] }}"
         }
       },
       "id": "00000000-0000-4000-8000-000000000077",
@@ -1437,7 +1437,7 @@
         "operation": "executeQuery",
         "query": "INSERT INTO execution_log (run_id, workflow, entity_id, step, status, error, detail) VALUES ($1, $2, NULLIF($3, ''), $4, $5, NULLIF($6, ''), $7::jsonb)",
         "options": {
-          "queryReplacement": "={{ [$execution.id, \"lead-intake\", ($json.lead_id) ?? '', \"human_decision\", $json.human.status === 'no_human_response' ? 'failed' : 'ok', ($json.human.status === 'no_human_response' ? 'no human response (timeout or ambiguous)' : '') ?? '', JSON.stringify(({ result: $json.human.status }))] }}"
+          "queryReplacement": "={{ [$execution.id, \"lead-intake\", String(($json.lead_id) ?? ''), \"human_decision\", $json.human.status === 'no_human_response' ? 'failed' : 'ok', ($json.human.status === 'no_human_response' ? 'no human response (timeout or ambiguous)' : '') ?? '', JSON.stringify(({ result: $json.human.status }))] }}"
         }
       },
       "id": "00000000-0000-4000-8000-000000000078",
@@ -1464,7 +1464,7 @@
         "operation": "executeQuery",
         "query": "INSERT INTO execution_log (run_id, workflow, entity_id, step, status, error, detail) VALUES ($1, $2, NULLIF($3, ''), $4, $5, NULLIF($6, ''), $7::jsonb)",
         "options": {
-          "queryReplacement": "={{ [$execution.id, \"lead-intake\", ($json.lead_id) ?? '', \"crm_sync\", 'ok', ('') ?? '', JSON.stringify(({ mode: \"mock\" }))] }}"
+          "queryReplacement": "={{ [$execution.id, \"lead-intake\", String(($json.lead_id) ?? ''), \"crm_sync\", 'ok', ('') ?? '', JSON.stringify(({ mode: \"mock\" }))] }}"
         }
       },
       "id": "00000000-0000-4000-8000-000000000079",
@@ -1491,7 +1491,7 @@
         "operation": "executeQuery",
         "query": "INSERT INTO execution_log (run_id, workflow, entity_id, step, status, error, detail) VALUES ($1, $2, NULLIF($3, ''), $4, $5, NULLIF($6, ''), $7::jsonb)",
         "options": {
-          "queryReplacement": "={{ [$execution.id, \"lead-intake\", ($json.lead_id) ?? '', \"crm_sync\", $json.crm.ok ? 'ok' : 'failed', ($json.crm.error) ?? '', JSON.stringify(({ mode: \"live\", attempts: $json.http.attempt }))] }}"
+          "queryReplacement": "={{ [$execution.id, \"lead-intake\", String(($json.lead_id) ?? ''), \"crm_sync\", $json.crm.ok ? 'ok' : 'failed', ($json.crm.error) ?? '', JSON.stringify(({ mode: \"live\", attempts: $json.http.attempt }))] }}"
         }
       },
       "id": "00000000-0000-4000-8000-000000000080",
@@ -1518,7 +1518,7 @@
         "operation": "executeQuery",
         "query": "INSERT INTO execution_log (run_id, workflow, entity_id, step, status, error, detail) VALUES ($1, $2, NULLIF($3, ''), $4, $5, NULLIF($6, ''), $7::jsonb)",
         "options": {
-          "queryReplacement": "={{ [$execution.id, \"lead-intake\", ($json.lead_id) ?? '', \"rep_assigned\", $json.rep ? 'ok' : 'skipped', ($json.outreach.reason ?? '') ?? '', JSON.stringify(({ rep: $json.rep ? $json.rep.email : null, outreach: $json.outreach.status }))] }}"
+          "queryReplacement": "={{ [$execution.id, \"lead-intake\", String(($json.lead_id) ?? ''), \"rep_assigned\", $json.rep ? 'ok' : 'skipped', ($json.outreach.reason ?? '') ?? '', JSON.stringify(({ rep: $json.rep ? $json.rep.email : null, outreach: $json.outreach.status }))] }}"
         }
       },
       "id": "00000000-0000-4000-8000-000000000081",
@@ -1545,7 +1545,7 @@
         "operation": "executeQuery",
         "query": "INSERT INTO execution_log (run_id, workflow, entity_id, step, status, error, detail) VALUES ($1, $2, NULLIF($3, ''), $4, $5, NULLIF($6, ''), $7::jsonb)",
         "options": {
-          "queryReplacement": "={{ [$execution.id, \"lead-intake\", ($json.lead_id) ?? '', \"owner_notified\", $json.notify.ok ? 'ok' : 'failed', ($json.notify.error) ?? '', JSON.stringify(({}))] }}"
+          "queryReplacement": "={{ [$execution.id, \"lead-intake\", String(($json.lead_id) ?? ''), \"owner_notified\", $json.notify.ok ? 'ok' : 'failed', ($json.notify.error) ?? '', JSON.stringify(({}))] }}"
         }
       },
       "id": "00000000-0000-4000-8000-000000000082",
@@ -1572,7 +1572,7 @@
         "operation": "executeQuery",
         "query": "INSERT INTO execution_log (run_id, workflow, entity_id, step, status, error, detail) VALUES ($1, $2, NULLIF($3, ''), $4, $5, NULLIF($6, ''), $7::jsonb)",
         "options": {
-          "queryReplacement": "={{ [$execution.id, \"lead-intake\", ($json.lead_id) ?? '', \"rep_approval_requested\", 'waiting', ('') ?? '', JSON.stringify(({ rep: $json.rep.email }))] }}"
+          "queryReplacement": "={{ [$execution.id, \"lead-intake\", String(($json.lead_id) ?? ''), \"rep_approval_requested\", 'waiting', ('') ?? '', JSON.stringify(({ rep: $json.rep.email }))] }}"
         }
       },
       "id": "00000000-0000-4000-8000-000000000083",
@@ -1599,7 +1599,7 @@
         "operation": "executeQuery",
         "query": "INSERT INTO execution_log (run_id, workflow, entity_id, step, status, error, detail) VALUES ($1, $2, NULLIF($3, ''), $4, $5, NULLIF($6, ''), $7::jsonb)",
         "options": {
-          "queryReplacement": "={{ [$execution.id, \"lead-intake\", ($json.lead_id) ?? '', \"rep_decision\", $json.outreach.status === 'rep_no_response' ? 'failed' : 'ok', ($json.outreach.status === 'rep_no_response' ? 'no rep response (timeout or ambiguous)' : '') ?? '', JSON.stringify(({ result: $json.outreach.status }))] }}"
+          "queryReplacement": "={{ [$execution.id, \"lead-intake\", String(($json.lead_id) ?? ''), \"rep_decision\", $json.outreach.status === 'rep_no_response' ? 'failed' : 'ok', ($json.outreach.status === 'rep_no_response' ? 'no rep response (timeout or ambiguous)' : '') ?? '', JSON.stringify(({ result: $json.outreach.status }))] }}"
         }
       },
       "id": "00000000-0000-4000-8000-000000000084",
@@ -1626,7 +1626,7 @@
         "operation": "executeQuery",
         "query": "INSERT INTO execution_log (run_id, workflow, entity_id, step, status, error, detail) VALUES ($1, $2, NULLIF($3, ''), $4, $5, NULLIF($6, ''), $7::jsonb)",
         "options": {
-          "queryReplacement": "={{ [$execution.id, \"lead-intake\", ($json.lead_id) ?? '', \"first_message\", $json.outreach.status === 'sent' ? 'ok' : 'failed', ($json.outreach.error ?? '') ?? '', JSON.stringify(({}))] }}"
+          "queryReplacement": "={{ [$execution.id, \"lead-intake\", String(($json.lead_id) ?? ''), \"first_message\", $json.outreach.status === 'sent' ? 'ok' : 'failed', ($json.outreach.error ?? '') ?? '', JSON.stringify(({}))] }}"
         }
       },
       "id": "00000000-0000-4000-8000-000000000085",
@@ -1653,7 +1653,7 @@
         "operation": "executeQuery",
         "query": "INSERT INTO execution_log (run_id, workflow, entity_id, step, status, error, detail) VALUES ($1, $2, NULLIF($3, ''), $4, $5, NULLIF($6, ''), $7::jsonb)",
         "options": {
-          "queryReplacement": "={{ [$execution.id, \"lead-intake\", ($json.lead_id) ?? '', \"completed\", ($json.status === 'crm_failed' || ($json.outreach && $json.outreach.status === 'send_failed')) ? 'failed' : 'ok', ($json.status === 'crm_failed' ? 'crm_failed' : (($json.outreach && $json.outreach.status === 'send_failed') ? 'send_failed' : '')) ?? '', JSON.stringify(({ status: $json.status, tier: $json.decision ? $json.decision.tier : null, outreach: $json.outreach ? $json.outreach.status : null }))] }}"
+          "queryReplacement": "={{ [$execution.id, \"lead-intake\", String(($json.lead_id) ?? ''), \"completed\", ($json.status === 'crm_failed' || ($json.outreach && $json.outreach.status === 'send_failed')) ? 'failed' : 'ok', ($json.status === 'crm_failed' ? 'crm_failed' : (($json.outreach && $json.outreach.status === 'send_failed') ? 'send_failed' : '')) ?? '', JSON.stringify(({ status: $json.status, tier: $json.decision ? $json.decision.tier : null, outreach: $json.outreach ? $json.outreach.status : null }))] }}"
         }
       },
       "id": "00000000-0000-4000-8000-000000000086",
@@ -1677,7 +1677,7 @@
     },
     {
       "parameters": {
-        "content": "## 1 · Ingesta + idempotencia (determinístico)\nAdapta formatos de canal, valida, normaliza y reclama la clave. Responde 202 / 422 / 200-duplicado de inmediato.",
+        "content": "## 1 · Intake + idempotency (deterministic)\nAdapts channel formats, validates, normalizes and claims the key. Replies 202 / 422 / 200-duplicate immediately.",
         "width": 2040,
         "height": 150,
         "color": 7
@@ -1693,7 +1693,7 @@
     },
     {
       "parameters": {
-        "content": "## 2 · Enriquecimiento + Juicio (IA)\nReglas contra el ICP configurable; Claude puntúa fit + confianza + citas verbatim y redacta el primer mensaje. Reintentos con backoff; si falla, ai_failed → humano.",
+        "content": "## 2 · Enrichment + Judgment (AI)\nRules against a configurable ICP; Claude scores fit + confidence + verbatim quotes and drafts the first message. Retries with backoff; on failure, ai_failed → human.",
         "width": 1680,
         "height": 140,
         "color": 7
@@ -1709,7 +1709,7 @@
     },
     {
       "parameters": {
-        "content": "## 3 · Compuerta (determinístico)\nUmbrales explícitos deciden si se requiere humano.",
+        "content": "## 3 · Gate (deterministic)\nExplicit thresholds decide whether a human is required.",
         "width": 300,
         "height": 130,
         "color": 7
@@ -1725,8 +1725,8 @@
     },
     {
       "parameters": {
-        "content": "## 4 · Humano\nAprobación del lead por email. Timeout = no aprobado.",
-        "width": 800,
+        "content": "## 4 · Human\nLead approval by email. Timeout = not approved.",
+        "width": 700,
         "height": 110,
         "color": 7
       },
@@ -1741,7 +1741,7 @@
     },
     {
       "parameters": {
-        "content": "## 5 · CRM\nUpsert con backoff.",
+        "content": "## 5 · CRM\nUpsert with backoff.",
         "width": 1100,
         "height": 110,
         "color": 7
@@ -1757,7 +1757,7 @@
     },
     {
       "parameters": {
-        "content": "## 6 · Leads calientes: vendedor + primer mensaje\nRound-robin → aviso al dueño → el VENDEDOR aprueba el borrador → recién entonces se envía al lead.",
+        "content": "## 6 · Hot leads: sales rep + first message\nRound-robin → owner notified → the REP approves the draft → only then is it sent to the lead.",
         "width": 2200,
         "height": 130,
         "color": 7
@@ -1773,7 +1773,7 @@
     },
     {
       "parameters": {
-        "content": "## 7 · Evidencia\nAuditoría en ./audit/, cierre de idempotencia y resultado para el reporte semanal.",
+        "content": "## 7 · Evidence\nAudit trail in ./audit/, idempotency close-out and result for the weekly report.",
         "width": 1000,
         "height": 110,
         "color": 7
@@ -1789,7 +1789,7 @@
     },
     {
       "parameters": {
-        "content": "### Log por paso → Postgres (execution_log)\nLos nodos \"Log · …\" son ramas laterales: no cambian el estado del flujo. Si Postgres cae, el flujo falla ruidosamente.",
+        "content": "### Per-step log → Postgres (execution_log)\nThe \"Log · …\" nodes are side branches: they do not change flow state. If Postgres goes down, the flow fails loudly.",
         "width": 760,
         "height": 110,
         "color": 7

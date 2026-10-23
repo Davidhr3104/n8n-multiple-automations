@@ -159,8 +159,8 @@ return { json: { key: s.idem.key, report_source: s.report_source, leads: s.metri
   L('Render Report', { step: 'report_built', status: "$json.report_source === 'fallback_after_ai_failure' ? 'failed' : 'ok'", error: "$json.ai_error ?? ''", detail: '({ report_source: $json.report_source })' });
   L('Capture Send', { step: 'report_sent', status: "$json.sent.ok ? 'ok' : 'failed'", error: "$json.sent.error ?? ''", detail: '({ to: $json.config.ownerEmail })' });
 
-  w.note('## Reporte semanal\nCifras: SQL determinístico sobre lead_outcomes + execution_log. Narrativa: Claude (o mock) usando SOLO esas cifras. Si Claude falla, sale igual con resumen determinístico y lo declara.', [col(0) - 20, -190], col(7), 130)
-   .note('### Log por paso → Postgres\nNodos "Log · …": ramas laterales, no alteran el flujo.', [col(0) - 20, 640], 500, 90);
+  w.note('## Weekly report\nFigures: deterministic SQL over lead_outcomes + execution_log. Narrative: Claude (or mock) using ONLY those figures. If Claude fails, it still ships with a deterministic summary and says so.', [col(0) - 20, -190], col(7), 130)
+   .note('### Per-step log → Postgres\nNodes "Log · …": side branches, they do not alter the flow.', [col(0) - 20, 640], 500, 90);
 
   w.link('Weekly Schedule', 'Prepare Run').link('Manual Trigger (webhook)', 'Prepare Run')
    .link('Prepare Run', 'Claim Idempotency').link('Claim Idempotency', 'Idempotency Result').link('Idempotency Result', 'New run?')

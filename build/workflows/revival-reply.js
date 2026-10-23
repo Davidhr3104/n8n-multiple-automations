@@ -303,8 +303,8 @@ return { json: r };`),
   L('Capture Custom Fields', { step: 'ghl_custom_fields', status: "$json.cf.ok ? 'ok' : 'failed'", error: "$json.cf.error ?? ''" });
   L('Build Result', { step: 'completed', status: "['booking_send_failed', 'custom_fields_failed', 'review_notify_failed'].includes($json.result.status) ? 'failed' : 'ok'", error: "['booking_send_failed', 'custom_fields_failed', 'review_notify_failed'].includes($json.result.status) ? $json.result.status : ''", detail: '({ result: $json.result })' });
 
-  w.note('## Revival · Handle Reply\nBajas determinísticas primero (sin IA) → clasificación → enrutado con reglas fijas → interés: el dueño aprueba antes de enviar el link de booking → persistencia atómica.', [col(0) - 20, -380], col(14), 130)
-   .note('### Log por paso → Postgres\nNodos "Log · …": ramas laterales.', [col(0) - 20, 860], 400, 90);
+  w.note('## Revival · Handle Reply\nDeterministic opt-outs first (no AI) → classification → fixed-rule routing → interest: the owner approves before the booking link is sent → atomic persistence.', [col(0) - 20, -380], col(14), 130)
+   .note('### Per-step log → Postgres\nNodes "Log · …": side branches.', [col(0) - 20, 860], 400, 90);
 
   // ── Conexiones ──
   w.link('Reply Webhook', 'Config').link('Config', 'Validate Request').link('Validate Request', 'Valid Request?')

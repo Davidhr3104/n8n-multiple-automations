@@ -1,12 +1,8 @@
-const { Workflow, embed, CRED, uid, code, codeAll, ifBool, ifEquals, logBranch, pg, idempotency, markIdempotency } = require('../foundation');
+const { Workflow, embed, CRED, uid, code, codeAll, ifBool, logBranch, pg, idempotency, markIdempotency } = require('../foundation');
 const { REVIVAL } = require('./revival-config');
 
 const WF = 'revival-run';
 const col = n => n * 240;
-
-// Los textos que llegan a emails de aprobación pueden contener datos del CRM (no confiables): se neutralizan & < >
-// con homoglifos porque n8n decodifica entidades HTML al armar el email (verificado en 2.43.4).
-const ESC = `const esc = v => String(v).replace(/&/g, "\\uFF06").replace(/</g, "\\u2039").replace(/>/g, "\\u203A");`;
 
 module.exports = function revivalRun() {
   const w = Workflow('revivalrun000001', 'Revival · Daily Run (Auditable)');
@@ -22,7 +18,7 @@ module.exports = function revivalRun() {
     `const trigger = $('Daily Schedule').isExecuted ? 'schedule' : 'manual';
 const day = new Date().toISOString().slice(0, 10).replace(/-/g, '');
 return { json: { trigger, batch_id: 'rev_' + day + '_' + $execution.id, config: ${JSON.stringify(REVIVAL)} } };`),
-    { notes: 'Config del revival (edítala en build/workflows/revival-config.js): inactividad, tope por corrida, toques, espaciado, modos.' });
+    { notes: 'Config del revival (edítala en build/workflows/revival-config.js): inactividad, tope por corrida, toques, espaciado, horario de envío, modos.' });
 
   idempotency(w, {
     workflow: WF, position: [col(2), 200], paramCount: 1, params: '$json.trigger', stateFrom: 'Prepare Run', check: 'New run?',
@@ -38,7 +34,7 @@ return { json: { trigger, batch_id: 'rev_' + day + '_' + $execution.id, config: 
           UNION
           SELECT norm_phone(c.phone, '57') FROM revival_state s JOIN revival_contacts c ON c.contact_id = s.contact_id WHERE norm_phone(c.phone, '57') IS NOT NULL
        ) e) AS engaged`, null,
-    { notes: 'keys = lista de bajas completa (se vuelve a consultar en Send Touch justo antes de cada envío). engaged = email/teléfono de quienes YA tienen secuencia: un duplicado suyo no recibe primer toque.' });
+    { notes: 'keys = lista de bajas completa (se vuelve a consultar al preparar y al enviar). engaged = email/teléfono de quienes YA tienen secuencia: un duplicado suyo no recibe primer toque.' });
   pg(w, 'Load Candidates', [col(6), 120],
     `WITH new_c AS (
   SELECT c.contact_id, c.name, c.email, c.phone, c.company, c.last_activity_at, c.history, 'new' AS kind, 1 AS touch
@@ -68,135 +64,113 @@ return [{ json: { ...base, candidates_found: rows.length, selected, skipped, ski
    .add('No Candidates', 'n8n-nodes-base.code', 2, [col(9), 520], code(
     `return { json: { ...$input.item.json, run_status: 'nothing_to_do' } };`));
 
-  // ── Aprobación del LOTE (acción externa masiva) ──
+  // ── Lote: se PREPARAN los borradores reales (nada se envía) ──
   pg(w, 'Create Batch', [col(9), 120],
-    "INSERT INTO revival_batches (batch_id, status, size, execution_id) VALUES ($1, 'pending_approval', $2::int, $3) RETURNING batch_id",
-    '[$json.batch_id, $json.selected.length, $execution.id]',
-    { notes: 'El lote queda "pending_approval". Send Touch NO envía nada si su lote no está "approved".' });
+    `INSERT INTO revival_batches (batch_id, status, size, execution_id, review_token, expires_at)
+VALUES ($1, 'preparing', $2::int, $3, replace(gen_random_uuid()::text, '-', ''), now() + make_interval(hours => $4::int))
+RETURNING batch_id, review_token, expires_at`,
+    '[$json.batch_id, $json.selected.length, $execution.id, $json.config.approvalTimeoutHours]',
+    { notes: 'El lote nace "preparing" con un token aleatorio de revisión y fecha de vencimiento. Mientras no esté "approved" no puede salir ningún mensaje.' });
   w.add('Batch Created', 'n8n-nodes-base.code', 2, [col(10), 120], code(
-    `return { json: { ...$('Any candidates?').item.json } };`))
-   .add('Build Preview', 'n8n-nodes-base.code', 2, [col(11), 120], code(embed(
-    [{ file: 'revival', exports: ['mockTouch'] }],
-    `const s = $input.item.json;
-const newN = s.selected.filter(r => r.kind === 'new').length;
-const fu = s.selected.length - newN;
-const lines = [
-  'BATCH ' + s.batch_id + ': ' + s.selected.length + ' contacts to message (' + newN + ' new, ' + fu + ' follow-ups)',
-  'Skipped: ' + (Object.entries(s.skipped_counts).map(([k, v]) => k + ' ' + v).join(', ') || 'none'),
-  '',
-  'WHO:',
-  ...s.selected.map(r => '  - ' + r.name + ' <' + r.email + '> — touch ' + r.touch + ' (' + r.kind + ')'),
-  '',
-  'SAMPLE TEXT (deterministic preview; the real text is written per lead and logged):',
-  ...s.selected.slice(0, 3).map(r => '  [' + r.name + '] ' + mockTouch(r, r.touch)),
-  '',
-  'Nothing is sent unless you approve this batch. Every message also gets an opt-out footer and a suppression check right before sending.',
-];
-${ESC}
-return { json: { ...s, preview_text: lines.join("\\n"), preview_message: lines.map(esc).join("\\n") } };`)))
-   .add('Request Batch Approval', 'n8n-nodes-base.emailSend', 2.1, [col(12), 0], {
-    resource: 'email',
-    operation: 'sendAndWait',
-    fromEmail: '={{ $json.config.fromEmail }}',
-    toEmail: '={{ $json.config.ownerEmail }}',
-    subject: "={{ 'Approve revival batch (' + $json.selected.length + ' contacts)' }}",
-    message: '={{ $json.preview_message }}',
-    responseType: 'approval',
-    approvalOptions: { values: { approvalType: 'double', approveLabel: 'Approve batch', disapproveLabel: 'Reject batch' } },
-    options: { appendAttribution: false, limitWaitTime: { values: { limitType: 'afterTimeInterval', resumeAmount: '={{ $json.config.approvalTimeoutHours }}', resumeUnit: 'hours' } } },
-  }, { credentials: CRED.smtp, notes: 'Aprobación humana ANTES de cualquier envío. Canal: email (Mailpit local). Para Slack, cambiar este nodo por Slack → Send and Wait.' })
-   .add('Apply Decision', 'n8n-nodes-base.code', 2, [col(13), 0], code(embed(
-    [{ file: 'decision', exports: ['applyHumanDecision'] }],
-    `const state = $('Build Preview').item.json;
-const h = applyHumanDecision($input.item.json);
-return { json: { ...state, human: { ...h, decided_at: new Date().toISOString() } } };`)),
-    { notes: 'Falla cerrado: timeout o respuesta ambigua = lote NO aprobado.' })
-   .add('Batch Approved?', 'n8n-nodes-base.if', 2.2, [col(14), 0], ifEquals('={{ $json.human.status }}', 'approved_by_human'));
-
-  // ── Rechazado / sin respuesta ──
-  pg(w, 'Reject Batch', [col(15), 300],
-    'UPDATE revival_batches SET status = $2, decided_at = now() WHERE batch_id = $1 RETURNING batch_id',
-    "[$json.batch_id, $json.human.status === 'no_human_response' ? 'no_response' : 'rejected']", { alwaysOutputData: true });
-  w.add('Batch Rejected', 'n8n-nodes-base.code', 2, [col(16), 300], code(
-    `const s = $('Apply Decision').item.json;
-return { json: { ...s, run_status: s.human.status === 'no_human_response' ? 'batch_no_response' : 'batch_rejected' } };`));
-
-  // ── Aprobado: despacho un webhook por lead (cada toque es su propia ejecución, auditable) ──
-  pg(w, 'Approve Batch', [col(15), -40],
-    "UPDATE revival_batches SET status = 'approved', decided_at = now() WHERE batch_id = $1 AND status = 'pending_approval' RETURNING batch_id",
-    '[$json.batch_id]', { alwaysOutputData: true, notes: 'Solo aprueba si el lote seguía "pending_approval".' });
-  w.add('Expand Batch', 'n8n-nodes-base.code', 2, [col(16), -40], codeAll(
-    `const state = $('Apply Decision').first().json;
-const row = $input.first().json;
-if (!row.batch_id) throw new Error('Batch ' + state.batch_id + ' could not be approved (its state changed while waiting). Nothing was sent.');
-return state.selected.map(r => ({ json: { batch_id: state.batch_id, contact_id: r.contact_id, touch: Number(r.touch), name: r.name, token: state.config.internalToken, touch_url: state.config.touchUrl } }));`),
-    { notes: 'Un ítem por contacto del lote aprobado.' })
-   .add('Dispatch Touch', 'n8n-nodes-base.httpRequest', 4.2, [col(17), -40], {
+    `const r = $input.item.json;
+return { json: { ...$('Any candidates?').item.json, review_token: r.review_token, expires_at: r.expires_at } };`))
+   .add('Expand Batch', 'n8n-nodes-base.code', 2, [col(11), 120], codeAll(
+    `const s = $('Batch Created').first().json;
+return s.selected.map(r => ({ json: { batch_id: s.batch_id, contact_id: r.contact_id, touch: Number(r.touch), kind: r.kind, token: s.config.internalToken, prepare_url: s.config.prepareUrl } }));`),
+    { notes: 'Un ítem por contacto seleccionado.' })
+   .add('Prepare Draft', 'n8n-nodes-base.httpRequest', 4.2, [col(12), 120], {
     method: 'POST',
-    url: '={{ $json.touch_url }}',
+    url: '={{ $json.prepare_url }}',
     sendHeaders: true,
     headerParameters: { parameters: [{ name: 'x-revival-token', value: '={{ $json.token }}' }, { name: 'content-type', value: 'application/json' }] },
     sendBody: true,
     specifyBody: 'json',
-    jsonBody: '={{ JSON.stringify({ batch_id: $json.batch_id, contact_id: $json.contact_id, touch: $json.touch }) }}',
-    options: { timeout: 30000, batching: { batch: { batchSize: 1, batchInterval: 1500 } }, response: { response: { fullResponse: true, neverError: true } } },
-  }, { onError: 'continueRegularOutput', retryOnFail: true, maxTries: 3, waitBetweenTries: 2000,
-       notes: 'Llamada INTERNA a Send Touch, de a un lead cada 1.5 s. Reintento fijo (no el bucle exponencial: ese asume 1 ítem por ejecución). 202 = aceptado, 409 = bloqueado por la guarda, 200 = duplicado.' })
-   .add('Summarize Dispatch', 'n8n-nodes-base.code', 2, [col(18), -40], codeAll(
-    `const state = $('Apply Decision').first().json;
+    jsonBody: '={{ JSON.stringify({ batch_id: $json.batch_id, contact_id: $json.contact_id, touch: $json.touch, kind: $json.kind }) }}',
+    options: { timeout: 150000, batching: { batch: { batchSize: 1, batchInterval: 500 } }, response: { response: { fullResponse: true, neverError: true } } },
+  }, { onError: 'continueRegularOutput',
+       notes: 'Llamada INTERNA y SÍNCRONA a Prepare Draft: responde cuando el borrador (o su bloqueo) ya está guardado. NO envía nada.' })
+   .add('Summarize Preparation', 'n8n-nodes-base.code', 2, [col(13), 120], codeAll(
+    `const state = $('Batch Created').first().json;
 const res = $input.all().map(i => i.json);
-const count = c => res.filter(r => r.statusCode === c).length;
-const accepted = count(202), blocked = count(409), duplicate = count(200);
-const failures = res.filter(r => ![200, 202, 409].includes(r.statusCode));
-return [{ json: { ...state, dispatch: { total: res.length, accepted, blocked, duplicate, failed: failures.length, failures: failures.slice(0, 5).map(f => f.error ? JSON.stringify(f.error).slice(0, 200) : 'status ' + f.statusCode) } } }];`))
-   .add('Side · Finalize Batch', 'n8n-nodes-base.postgres', 2.6, [col(19), -200], {
-    operation: 'executeQuery',
-    query: "UPDATE revival_batches SET status = 'dispatched', summary = $2::jsonb WHERE batch_id = $1",
-    options: { queryReplacement: '={{ [$json.batch_id, JSON.stringify($json.dispatch)] }}' },
-  }, { credentials: CRED.pg, retryOnFail: true, maxTries: 3, waitBetweenTries: 1000 })
-   .add('Send Run Summary', 'n8n-nodes-base.emailSend', 2.1, [col(19), -40], {
+const st = r => (r.body && r.body.status) || null;
+const ready = res.filter(r => r.statusCode === 200 && st(r) === 'pending_review').length;
+const blocked = res.filter(r => r.statusCode === 200 && st(r) === 'blocked').length;
+const failed = res.filter(r => r.statusCode === 200 && st(r) === 'failed').length;
+const duplicate = res.filter(r => r.statusCode === 200 && st(r) === 'duplicate').length;
+const guard_blocked = res.filter(r => r.statusCode === 409).length;
+const errors = res.filter(r => ![200, 409].includes(r.statusCode));
+return [{ json: { ...state, prep: { total: res.length, ready, blocked, failed, duplicate, guard_blocked, errors: errors.length, error_samples: errors.slice(0, 5).map(f => f.error ? JSON.stringify(f.error).slice(0, 200) : 'status ' + f.statusCode) } } }];`))
+   .add('Any ready?', 'n8n-nodes-base.if', 2.2, [col(14), 120], ifBool('={{ $json.prep.ready > 0 }}'));
+
+  // ── Sin borradores listos: el lote se cierra, no hay nada que revisar ──
+  pg(w, 'Reject Batch', [col(15), 420],
+    "UPDATE revival_batches SET status = 'rejected', decided_at = now(), summary = $2::jsonb WHERE batch_id = $1 AND status = 'preparing' RETURNING batch_id",
+    '[$json.batch_id, JSON.stringify($json.prep)]', { alwaysOutputData: true });
+  w.add('Nothing To Review', 'n8n-nodes-base.code', 2, [col(16), 420], code(
+    `return { json: { ...$('Summarize Preparation').item.json, run_status: 'nothing_to_review' } };`));
+
+  // ── Hay borradores: el dueño recibe el link de revisión ──
+  pg(w, 'Mark Pending Review', [col(15), 0],
+    "UPDATE revival_batches SET status = 'pending_review', summary = $2::jsonb WHERE batch_id = $1 AND status = 'preparing' RETURNING batch_id",
+    '[$json.batch_id, JSON.stringify($json.prep)]', { alwaysOutputData: true, notes: 'Solo pasa a pending_review si seguía "preparing".' });
+  w.add('Review Marked', 'n8n-nodes-base.code', 2, [col(16), 0], code(
+    `const s = $('Summarize Preparation').item.json;
+if (!$input.item.json.batch_id) throw new Error('Batch ' + s.batch_id + ' could not move to pending_review (its state changed). No review link was sent.');
+const link = s.config.publicBaseUrl + '/webhook/revival-review?batch=' + encodeURIComponent(s.batch_id) + '&token=' + encodeURIComponent(s.review_token);
+const lines = [
+  'Revival batch ' + s.batch_id + ' is ready to review.',
+  s.prep.ready + ' message(s) wait for your decision: send, edit or skip each one.',
+  s.prep.blocked + s.prep.failed > 0 ? (s.prep.blocked + s.prep.failed) + ' contact(s) were blocked or failed and will not be messaged.' : '',
+  '',
+  'Review: ' + link,
+  'This link expires ' + s.expires_at + '. Nothing is sent until you submit.',
+].filter(l => l !== '');
+const html = '<p>Revival batch <b>' + s.batch_id + '</b> is ready to review.</p><p><b>' + s.prep.ready + '</b> message(s) wait for your decision: send, edit or skip each one.' + (s.prep.blocked + s.prep.failed > 0 ? ' ' + (s.prep.blocked + s.prep.failed) + ' contact(s) were blocked or failed and will not be messaged.' : '') + '</p><p><a href="' + link + '" style="display:inline-block;padding:12px 22px;background:#1e40af;color:#ffffff;border-radius:8px;text-decoration:none;font-weight:700">Review messages</a></p><p style="color:#555">This link expires ' + s.expires_at + '. Nothing is sent until you submit.</p>';
+return { json: { ...s, review_link: link, email_text: lines.join('\\n'), email_html: html } };`))
+   .add('Send Review Email', 'n8n-nodes-base.emailSend', 2.1, [col(17), 0], {
     resource: 'email',
     operation: 'send',
     fromEmail: '={{ $json.config.fromEmail }}',
     toEmail: '={{ $json.config.ownerEmail }}',
-    subject: "={{ 'Revival run ' + $json.batch_id + ': ' + $json.dispatch.accepted + ' accepted, ' + $json.dispatch.blocked + ' blocked, ' + $json.dispatch.failed + ' failed' }}",
-    emailFormat: 'text',
-    text: "={{ 'Batch ' + $json.batch_id + '\\nDispatched: ' + $json.dispatch.total + '\\nAccepted: ' + $json.dispatch.accepted + '\\nBlocked by guard: ' + $json.dispatch.blocked + '\\nDuplicates: ' + $json.dispatch.duplicate + '\\nFailed: ' + $json.dispatch.failed + ($json.dispatch.failures.length ? '\\n' + $json.dispatch.failures.join('\\n') : '') + '\\n\\nEach touch has its own execution and rows in execution_log / revival_messages.' }}",
+    subject: "={{ 'Review revival batch (' + $json.prep.ready + ' messages)' }}",
+    emailFormat: 'both',
+    text: '={{ $json.email_text }}',
+    html: '={{ $json.email_html }}',
     options: { appendAttribution: false },
-  }, { credentials: CRED.smtp, onError: 'continueRegularOutput' })
-   .add('Capture Summary', 'n8n-nodes-base.code', 2, [col(20), -40], code(
-    `const s = $('Summarize Dispatch').item.json;
+  }, { credentials: CRED.smtp, onError: 'continueRegularOutput', notes: 'Aprobación humana ANTES de cualquier envío, ahora sobre los mensajes REALES. Canal: email con link (Mailpit local). Para Slack, enviar este mismo link por Slack.' })
+   .add('Capture Review Email', 'n8n-nodes-base.code', 2, [col(18), 0], code(
+    `const s = $('Review Marked').item.json;
 const r = $input.item.json;
-return { json: { ...s, run_status: 'dispatched', summary_sent: r.error ? { ok: false, error: JSON.stringify(r.error) } : { ok: true } } };`));
+return { json: { ...s, run_status: 'awaiting_review', review_email: r.error ? { ok: false, error: JSON.stringify(r.error) } : { ok: true } } };`));
 
   // ── Cierre común ──
-  w.add('Finish Run', 'n8n-nodes-base.code', 2, [col(21), 200], code(
+  w.add('Finish Run', 'n8n-nodes-base.code', 2, [col(19), 200], code(
     `const s = $input.item.json;
 return { json: { ...s, finished_at: new Date().toISOString() } };`),
-    { notes: 'Todas las rutas terminan aquí: sin candidatos, lote rechazado, sin respuesta o despachado.' });
+    { notes: 'Todas las rutas terminan aquí: sin candidatos, sin borradores o esperando la revisión del dueño.' });
   markIdempotency(w, {
-    position: [col(22), 40], keyExpr: '$json.idem.key',
-    statusExpr: "(($json.dispatch && $json.dispatch.failed > 0) || ($json.summary_sent && !$json.summary_sent.ok)) ? 'failed' : 'done'",
+    position: [col(20), 40], keyExpr: '$json.idem.key',
+    statusExpr: "(($json.prep && $json.prep.errors > 0) || ($json.review_email && !$json.review_email.ok)) ? 'failed' : 'done'",
     resultExpr: '({ run_status: $json.run_status, batch_id: $json.batch_id })',
   });
-  w.add('Assert Run', 'n8n-nodes-base.code', 2, [col(22), 200], code(
+  w.add('Assert Run', 'n8n-nodes-base.code', 2, [col(20), 200], code(
     `const s = $input.item.json;
-if (s.dispatch && s.dispatch.failed > 0) throw new Error('Revival batch ' + s.batch_id + ': ' + s.dispatch.failed + ' dispatch(es) failed: ' + s.dispatch.failures.join(' | '));
-if (s.summary_sent && !s.summary_sent.ok) throw new Error('Revival batch ' + s.batch_id + ' dispatched but the summary email failed: ' + s.summary_sent.error);
+if (s.prep && s.prep.errors > 0) throw new Error('Revival batch ' + s.batch_id + ': ' + s.prep.errors + ' draft preparation(s) failed: ' + s.prep.error_samples.join(' | '));
+if (s.review_email && !s.review_email.ok) throw new Error('Revival batch ' + s.batch_id + ' prepared but the review email failed: ' + s.review_email.error);
 return { json: { batch_id: s.batch_id, run_status: s.run_status } };`),
-    { notes: 'Falla ruidosamente si algún despacho o el resumen fallaron → Error Handler.' });
+    { notes: 'Falla ruidosamente si algún borrador no se pudo preparar o si el email de revisión no salió.' });
 
-  // ── Log por paso (ramas laterales, encima de su nodo) ──
+  // ── Log por paso ──
   const L = (from, o) => logBranch(w, from, { workflow: WF, entity: '$json.batch_id', ...o });
   L('Idempotency Result', { step: 'run_claimed', status: "$json.idem.is_new ? 'ok' : 'duplicate'", detail: '({ trigger: $json.trigger })' });
   L('Select Candidates', { step: 'candidates_selected', detail: '({ found: $json.candidates_found, selected: $json.selected.length, skipped: $json.skipped_counts })' });
-  L('Batch Created', { step: 'batch_approval_requested', status: "'waiting'", detail: '({ size: $json.selected.length })' });
-  L('Apply Decision', { step: 'batch_decision', status: "$json.human.status === 'no_human_response' ? 'failed' : 'ok'", error: "$json.human.status === 'no_human_response' ? 'no response (timeout or ambiguous): batch NOT approved' : ''", detail: '({ result: $json.human.status })' });
-  L('Summarize Dispatch', { step: 'dispatched', status: "$json.dispatch.failed > 0 ? 'failed' : 'ok'", error: "$json.dispatch.failures.join(' | ')", detail: '({ dispatch: $json.dispatch })' });
-  L('Finish Run', { step: 'completed', status: "(($json.dispatch && $json.dispatch.failed > 0) || ($json.summary_sent && !$json.summary_sent.ok)) ? 'failed' : 'ok'", detail: '({ run_status: $json.run_status })' });
+  L('Batch Created', { step: 'batch_created', detail: '({ size: $json.selected.length, expires_at: $json.expires_at })' });
+  L('Summarize Preparation', { step: 'drafts_prepared', status: "$json.prep.errors > 0 ? 'failed' : 'ok'", error: "$json.prep.error_samples.join(' | ')", detail: '({ prep: $json.prep })' });
+  L('Capture Review Email', { step: 'review_requested', status: "$json.review_email.ok ? 'waiting' : 'failed'", error: "$json.review_email.error ?? ''", detail: '({ ready: $json.prep.ready })' });
+  L('Finish Run', { step: 'completed', status: "(($json.prep && $json.prep.errors > 0) || ($json.review_email && !$json.review_email.ok)) ? 'failed' : 'ok'", detail: '({ run_status: $json.run_status })' });
 
-  w.note('## Revival · Daily Run\nSelecciona inactivos + toques vencidos (SQL), filtra/deduplica/aplica bajas (determinístico), pide aprobación del LOTE y despacha un Send Touch por lead.', [col(0) - 20, -250], col(9), 130)
-   .note('### Log por paso → Postgres\nNodos "Log · …" y "Side · …": ramas laterales, no alteran el flujo.', [col(0) - 20, 640], 520, 90);
+  w.note('## Revival · Daily Run\nSelects inactive contacts + due follow-ups (SQL), filters/dedupes/applies opt-outs (deterministic), PREPARES the real drafts and emails the owner a review link. Nothing is sent here.', [col(0) - 20, -250], col(9), 130)
+   .note('### Per-step log → Postgres\nNodes "Log · …" and "Side · …": side branches, they do not alter the flow.', [col(0) - 20, 660], 520, 90);
 
   // ── Conexiones ──
   w.link('Daily Schedule', 'Prepare Run').link('Manual Trigger (webhook)', 'Prepare Run').link('Prepare Run', 'Claim Idempotency')
@@ -204,13 +178,12 @@ return { json: { batch_id: s.batch_id, run_status: s.run_status } };`),
    .link('Load Suppression', 'Load Candidates').link('Load Candidates', 'Select Candidates').link('Select Candidates', 'Any candidates?')
    .link('Any candidates?', 'Create Batch', 0).link('Any candidates?', 'No Candidates', 1)
    .link('No Candidates', 'Finish Run')
-   .link('Create Batch', 'Batch Created').link('Batch Created', 'Build Preview').link('Build Preview', 'Request Batch Approval')
-   .link('Request Batch Approval', 'Apply Decision').link('Apply Decision', 'Batch Approved?')
-   .link('Batch Approved?', 'Approve Batch', 0).link('Batch Approved?', 'Reject Batch', 1)
-   .link('Reject Batch', 'Batch Rejected').link('Batch Rejected', 'Finish Run')
-   .link('Approve Batch', 'Expand Batch').link('Expand Batch', 'Dispatch Touch').link('Dispatch Touch', 'Summarize Dispatch')
-   .link('Summarize Dispatch', 'Send Run Summary').link('Summarize Dispatch', 'Side · Finalize Batch')
-   .link('Send Run Summary', 'Capture Summary').link('Capture Summary', 'Finish Run')
+   .link('Create Batch', 'Batch Created').link('Batch Created', 'Expand Batch').link('Expand Batch', 'Prepare Draft')
+   .link('Prepare Draft', 'Summarize Preparation').link('Summarize Preparation', 'Any ready?')
+   .link('Any ready?', 'Mark Pending Review', 0).link('Any ready?', 'Reject Batch', 1)
+   .link('Reject Batch', 'Nothing To Review').link('Nothing To Review', 'Finish Run')
+   .link('Mark Pending Review', 'Review Marked').link('Review Marked', 'Send Review Email').link('Send Review Email', 'Capture Review Email')
+   .link('Capture Review Email', 'Finish Run')
    .link('Finish Run', 'Mark Idempotency').link('Finish Run', 'Assert Run');
 
   return { file: 'revival-run.json', workflow: w, errorWorkflow: 'errhandler000001' };

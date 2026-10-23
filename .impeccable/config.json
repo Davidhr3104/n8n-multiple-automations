@@ -1,0 +1,14 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "overused-font",
+        "value": "arial",
+        "createdAt": "2026-10-13T23:48:53.331Z",
+        "reason": "Claude decided: Arial is the web-safe font for HTML email (lib/report.js weekly report); email clients do not load web fonts. Not confirmed by the user."
+      }
+    ]
+  }
+}

@@ -46,7 +46,7 @@
         "operation": "executeQuery",
         "query": "INSERT INTO execution_log (run_id, workflow, entity_id, step, status, error, detail) VALUES ($1, $2, NULLIF($3, ''), $4, $5, NULLIF($6, ''), $7::jsonb)",
         "options": {
-          "queryReplacement": "={{ [$json.execution.id, \"error-handler\", ($json.workflow.name) ?? '', \"workflow_error\", 'failed', (($json.execution.lastNodeExecuted || 'unknown node') + ': ' + $json.execution.error.message) ?? '', JSON.stringify(({ workflow: $json.workflow.name, url: $json.execution.url }))] }}"
+          "queryReplacement": "={{ [$json.execution.id, \"error-handler\", String(($json.workflow.name) ?? ''), \"workflow_error\", 'failed', (($json.execution.lastNodeExecuted || 'unknown node') + ': ' + $json.execution.error.message) ?? '', JSON.stringify(({ workflow: $json.workflow.name, url: $json.execution.url }))] }}"
         }
       },
       "id": "00000000-0000-4000-8000-000000000003",

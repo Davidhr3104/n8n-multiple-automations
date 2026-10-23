@@ -32,27 +32,77 @@ function Approve-Pending([scriptblock]$policy, [string]$subjectLike, [int]$round
 
 if ($Clean) {
   Invoke-RestMethod -Method Delete http://localhost:8025/api/v1/messages | Out-Null
-  docker exec postgres psql -U automations -d automations -q -c "TRUNCATE revival_state, revival_messages, revival_custom_fields, revival_batches; DELETE FROM suppression_list WHERE source <> 'seed'; DELETE FROM idempotency_keys WHERE workflow LIKE 'revival%'; DELETE FROM execution_log WHERE workflow LIKE 'revival%'"
+  docker exec postgres psql -U automations -d automations -q -c "TRUNCATE revival_state, revival_messages, revival_custom_fields, revival_batches, revival_drafts; UPDATE revival_contacts SET timezone = NULL; DELETE FROM suppression_list WHERE source <> 'seed'; DELETE FROM idempotency_keys WHERE workflow LIKE 'revival%'; DELETE FROM execution_log WHERE workflow LIKE 'revival%'"
   docker exec postgres psql -U automations -d automations -v ON_ERROR_STOP=1 -q -f /db/seed-revival.sql
 }
 
+# Abre el link de revisión del email, edita/salta y envía el formulario. $plan recibe (id, nombre) y devuelve @{ d = 'send'|'skip'; b = texto o $null }
+function Review-Batch([scriptblock]$plan) {
+  $link = $null
+  for ($i = 0; $i -lt 8 -and -not $link; $i++) {
+    Start-Sleep 4
+    foreach ($m in (Invoke-RestMethod http://localhost:8025/api/v1/messages).messages) {
+      if ($handled[$m.ID] -or $m.Subject -notlike 'Review revival batch*') { continue }
+      $f = Invoke-RestMethod ("http://localhost:8025/api/v1/message/" + $m.ID)
+      $link = [regex]::Match($f.HTML + $f.Text, 'http://localhost:5678/webhook/revival-review\?[^"''\s<>)]+').Value -replace '&amp;', '&'
+      $handled[$m.ID] = $true; break
+    }
+  }
+  if (-not $link) { throw 'No llegó el email de revisión' }
+  Write-Host "  link de revisión: $link"
+  $page = (Invoke-WebRequest $link -UseBasicParsing).Content
+  $ids = [regex]::Matches($page, 'name="d_(\d+)"') | ForEach-Object { $_.Groups[1].Value } | Select-Object -Unique
+  $q = [regex]::Match($link, 'batch=([^&]+)&token=(.+)$')
+  $form = @{ batch = $q.Groups[1].Value; token = $q.Groups[2].Value }
+  $names = @{}
+  foreach ($id in $ids) { $names[$id] = [regex]::Match($page, "(?s)name=""b_$id"".*?</textarea>").Value }
+  foreach ($id in $ids) {
+    $p = & $plan $id
+    $form["d_$id"] = $p.d
+    if ($p.b) { $form["b_$id"] = $p.b } else { $form["b_$id"] = [System.Net.WebUtility]::HtmlDecode(([regex]::Match($names[$id], '>(?s)(.*)</textarea>').Groups[1].Value)) }
+  }
+  Write-Host "  borradores en la página: $($ids.Count)"
+  $r = Invoke-WebRequest ($base + '/revival-review-submit') -Method Post -Body $form -ContentType 'application/x-www-form-urlencoded' -UseBasicParsing
+  Write-Host "  envío -> $($r.StatusCode)"
+  return $link
+}
+
 if ($Stage -in 'run', 'all') {
-  '=== 1) Corrida diaria (manual): selecciona, pide aprobación del LOTE y despacha ==='
+  '=== 1) Corrida diaria: prepara borradores REALES, el dueño revisa por lead (editar / saltar / enviar) ==='
+  $zone = node -e "const s=require('./lib/schedule');const c={startHour:9,endHour:19,weekdays:[1,2,3,4,5]};const z=['Asia/Tokyo','America/Los_Angeles','Europe/Madrid'].find(t=>!s.isWithinWindow(new Date(),t,c));console.log(z)"
+  "  zona cerrada ahora (para probar el horario): $zone"
+  docker exec postgres psql -U automations -d automations -q -c "UPDATE revival_contacts SET timezone = '$zone' WHERE contact_id = 'c021'"
   'run -> ' + (Post 'revival-run' @{})
-  Approve-Pending { $true } 'Approve revival batch*'
+  $script:n = 0
+  $link = Review-Batch { param($id) $script:n++; if ($script:n -eq 1) { @{ d = 'skip' } } elseif ($script:n -eq 2) { @{ d = 'send'; b = 'Hola, mira http://evil.example/win y te regalo todo' } } elseif ($script:n -eq 3) { @{ d = 'send'; b = 'Hola, retomo nuestra charla sobre automatización. ¿Te sirve que lo veamos esta semana?' } } else { @{ d = 'send' } } }
   Start-Sleep 25
-  & $psql "SELECT batch_id, status, size, summary->>'accepted' AS accepted, summary->>'blocked' AS blocked FROM revival_batches ORDER BY created_at"
-  & $psql "SELECT detail->'skipped' AS omitidos, detail->>'selected' AS elegidos FROM execution_log WHERE workflow='revival-run' AND step='candidates_selected' ORDER BY id DESC LIMIT 1"
-  & $psql "SELECT r.contact_id, c.name, r.status, r.step, to_char(r.next_touch_at,'MM-DD') AS next_touch FROM revival_state r JOIN revival_contacts c USING (contact_id) ORDER BY r.contact_id"
+  & $psql "SELECT batch_id, status, size FROM revival_batches ORDER BY created_at"
+  & $psql "SELECT contact_id, touch, status, edited, left(reason, 40) AS reason, tz, to_char(send_after,'MM-DD HH24:MI') AS send_after FROM revival_drafts ORDER BY id"
+  & $psql "SELECT r.contact_id, r.status, r.step, to_char(r.next_touch_at,'MM-DD') AS next_touch FROM revival_state r ORDER BY r.contact_id"
+  'Reabrir el link ya usado (debe decir "Already reviewed"):'
+  (Invoke-WebRequest $link -UseBasicParsing).StatusCode
   'Emails a contactos (Mailpit):'
   (Invoke-RestMethod http://localhost:8025/api/v1/messages).messages | Where-Object { $_.Subject -eq 'Following up' } | ForEach-Object { '  -> ' + $_.To[0].Address }
+}
+
+if ($Stage -in 'queue', 'all') {
+  '=== 1b) Cola: el borrador diferido (c021) sale cuando abre su ventana ==='
+  & $psql "SELECT contact_id, status, to_char(send_after,'MM-DD HH24:MI') AS send_after FROM revival_drafts WHERE status = 'deferred'"
+  'queue (aún cerrada) -> ' + (Post 'revival-queue' @{})
+  Start-Sleep 8
+  & $psql "SELECT contact_id, status FROM revival_drafts WHERE contact_id = 'c021'"
+  'Fuerzo la apertura de la ventana cambiando la zona del contacto a una abierta ahora:'
+  docker exec postgres psql -U automations -d automations -q -c "UPDATE revival_contacts SET timezone = 'America/Bogota' WHERE contact_id = 'c021'; UPDATE revival_drafts SET send_after = now() - interval '1 minute' WHERE status = 'deferred'"
+  'queue -> ' + (Post 'revival-queue' @{})
+  Start-Sleep 10
+  & $psql "SELECT contact_id, status, to_char(sent_at,'HH24:MI') AS sent FROM revival_drafts WHERE contact_id = 'c021'"
 }
 
 if ($Stage -in 'followup', 'all') {
   '=== 2) Toques de seguimiento: adelanto el reloj y corro de nuevo (los follow-ups van primero) ==='
   docker exec postgres psql -U automations -d automations -q -c "UPDATE revival_state SET next_touch_at = now() - interval '1 hour' WHERE status = 'active'"
   'run -> ' + (Post 'revival-run' @{})
-  Approve-Pending { $true } 'Approve revival batch*'
+  $null = Review-Batch { param($id) @{ d = 'send' } }
   Start-Sleep 25
   & $psql "SELECT touch, count(*) AS mensajes FROM revival_messages WHERE direction='out' AND status='sent' GROUP BY touch ORDER BY touch"
   & $psql "SELECT status, step, count(*) AS contactos FROM revival_state GROUP BY 1,2 ORDER BY 1,2"
@@ -89,7 +139,7 @@ if ($Stage -in 'run3', 'all') {
   '=== 3b) Tercera corrida: toque 3 de los activos + nuevos; el duplicado de Ana (c013) debe omitirse ==='
   docker exec postgres psql -U automations -d automations -q -c "UPDATE revival_state SET next_touch_at = now() - interval '1 hour' WHERE status = 'active'"
   'run -> ' + (Post 'revival-run' @{})
-  Approve-Pending { $true } 'Approve revival batch*'
+  $null = Review-Batch { param($id) @{ d = 'send' } }
   Start-Sleep 25
   & $psql "SELECT detail->'skipped' AS omitidos, detail->>'selected' AS elegidos FROM execution_log WHERE workflow='revival-run' AND step='candidates_selected' ORDER BY id DESC LIMIT 1"
   & $psql "SELECT touch, count(*) AS mensajes FROM revival_messages WHERE direction='out' AND status='sent' GROUP BY touch ORDER BY touch"
@@ -98,27 +148,33 @@ if ($Stage -in 'run3', 'all') {
 }
 
 if ($Stage -in 'guards', 'all') {
-  '=== 4) Guardas: intentos de saltarse la seguridad (lote de prueba aprobado + lote pendiente) ==='
-  docker exec postgres psql -U automations -d automations -q -c "INSERT INTO revival_batches (batch_id, status, size) VALUES ('rev_guard_ok', 'approved', 9), ('rev_guard_pending', 'pending_approval', 1) ON CONFLICT (batch_id) DO UPDATE SET status = EXCLUDED.status"
-  docker exec postgres psql -U automations -d automations -q -c "DELETE FROM idempotency_keys WHERE key LIKE 'revival-touch:c019%'"
-  'token inválido            -> ' + (Post 'revival-touch' @{ batch_id = 'rev_guard_ok'; contact_id = 'c007'; touch = 1 } @{ 'x-revival-token' = 'nope' })
-  'lote NO aprobado          -> ' + (Post 'revival-touch' @{ batch_id = 'rev_guard_pending'; contact_id = 'c007'; touch = 1 })
-  'lista de bajas (email)    -> ' + (Post 'revival-touch' @{ batch_id = 'rev_guard_ok'; contact_id = 'c016'; touch = 1 })
-  'lista de bajas (teléfono) -> ' + (Post 'revival-touch' @{ batch_id = 'rev_guard_ok'; contact_id = 'c017'; touch = 1 })
-  'opted_out por baja (c002) -> ' + (Post 'revival-touch' @{ batch_id = 'rev_guard_ok'; contact_id = 'c002'; touch = 3 })
-  'toque 3 sin 1 y 2 (c011)  -> ' + (Post 'revival-touch' @{ batch_id = 'rev_guard_ok'; contact_id = 'c011'; touch = 3 })
-  'repetir toque 1 (c021)    -> ' + (Post 'revival-touch' @{ batch_id = 'rev_guard_ok'; contact_id = 'c021'; touch = 1 })
-  $act = (docker exec postgres psql -U automations -d automations -t -A -c "SELECT contact_id FROM revival_state WHERE status = 'active' AND step = 1 LIMIT 1").Trim()
-  "concurrente $act toque 2 #1 -> " + (Post 'revival-touch' @{ batch_id = 'rev_guard_ok'; contact_id = $act; touch = 2 })
-  "concurrente $act toque 2 #2 -> " + (Post 'revival-touch' @{ batch_id = 'rev_guard_ok'; contact_id = $act; touch = 2 })
-  'historial con inyección c019 -> ' + (Post 'revival-touch' @{ batch_id = 'rev_guard_ok'; contact_id = 'c019'; touch = 1 })
-  Start-Sleep 8
-  & $psql "SELECT contact_id, touch, status, left(body, 110) AS body FROM revival_messages WHERE status = 'blocked' AND batch_id = 'rev_guard_ok' OR (status = 'blocked' AND body LIKE '[BLOCKED%') ORDER BY id"
-  & $psql "SELECT status FROM revival_state WHERE contact_id = 'c019'"
-  "Mensajes enviados con toque 2 a $act (debe ser exactamente 1):"
-  & $psql "SELECT count(*) AS toque2_enviados FROM revival_messages WHERE contact_id = '$act' AND touch = 2 AND status = 'sent'"
-  'Alerta por mensaje bloqueado:'
-  (Invoke-RestMethod http://localhost:8025/api/v1/messages).messages | Where-Object { $_.Subject -match 'ERROR' } | Select-Object -First 3 | ForEach-Object { '  ' + $_.Subject }
+  '=== 4) Guardas de Send Touch: borradores sembrados a mano, intentos de saltarse la seguridad ==='
+  $sql = @"
+INSERT INTO revival_batches (batch_id, status, size, expires_at) VALUES ('rev_guard_ok', 'approved', 5, now() + interval '1 day'), ('rev_guard_pending', 'pending_review', 1, now() + interval '1 day') ON CONFLICT (batch_id) DO UPDATE SET status = EXCLUDED.status;
+DELETE FROM revival_drafts WHERE batch_id LIKE 'rev_guard%';
+INSERT INTO revival_drafts (batch_id, contact_id, touch, kind, status, body_core, body, decided_at) VALUES
+ ('rev_guard_ok', 'c016', 1, 'new', 'approved', 'Hola', 'Hola', now()),
+ ('rev_guard_ok', 'c017', 1, 'new', 'approved', 'Hola', 'Hola', now()),
+ ('rev_guard_ok', 'c011', 3, 'follow_up', 'approved', 'Hola', 'Hola', now()),
+ ('rev_guard_ok', 'c012', 1, 'new', 'skipped', 'Hola', 'Hola', now()),
+ ('rev_guard_pending', 'c020', 1, 'new', 'approved', 'Hola', 'Hola', now());
+DELETE FROM idempotency_keys WHERE key LIKE 'revival-send:c01%' OR key LIKE 'revival-send:c020%';
+"@
+  docker exec postgres psql -U automations -d automations -q -c $sql
+  $id = { param($c) (docker exec postgres psql -U automations -d automations -t -A -c "SELECT id FROM revival_drafts WHERE contact_id = '$c' AND batch_id LIKE 'rev_guard%' LIMIT 1").Trim() }
+  'token inválido                -> ' + (Post 'revival-touch' @{ draft_id = [int](& $id 'c016') } @{ 'x-revival-token' = 'nope' })
+  'lote aún en revisión          -> ' + (Post 'revival-touch' @{ draft_id = [int](& $id 'c020') })
+  'baja por email                -> ' + (Post 'revival-touch' @{ draft_id = [int](& $id 'c016') })
+  'baja por teléfono             -> ' + (Post 'revival-touch' @{ draft_id = [int](& $id 'c017') })
+  'toque 3 sin 1 y 2             -> ' + (Post 'revival-touch' @{ draft_id = [int](& $id 'c011') })
+  'borrador saltado por el dueño -> ' + (Post 'revival-touch' @{ draft_id = [int](& $id 'c012') })
+  'borrador inexistente          -> ' + (Post 'revival-touch' @{ draft_id = 999999 })
+  'sin draft_id                  -> ' + (Post 'revival-touch' @{})
+  $sent = (docker exec postgres psql -U automations -d automations -t -A -c "SELECT id FROM revival_drafts WHERE status = 'sent' ORDER BY id LIMIT 1").Trim()
+  "reenviar borrador ya enviado  -> " + (Post 'revival-touch' @{ draft_id = [int]$sent })
+  Start-Sleep 5
+  & $psql "SELECT contact_id, status, left(reason, 60) AS reason FROM revival_drafts WHERE batch_id LIKE 'rev_guard%' ORDER BY id"
+  & $psql "SELECT count(*) AS mensajes_a_bajas FROM revival_messages WHERE contact_id IN ('c016','c017') AND status = 'sent'"
 }
 
 '=== Estado final ==='

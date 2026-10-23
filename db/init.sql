@@ -154,3 +154,36 @@ CREATE TABLE IF NOT EXISTS revival_custom_fields (
 
 CREATE OR REPLACE VIEW v_revival_funnel AS
 SELECT status, count(*) AS contacts FROM revival_state GROUP BY status;
+
+-- ───────────── Revival v2: revisión por lead + horario de envío ─────────────
+-- Zona horaria IANA del contacto (opcional). Si falta se deduce del prefijo del teléfono o se usa la de por defecto.
+ALTER TABLE revival_contacts ADD COLUMN IF NOT EXISTS timezone text;
+
+-- El lote ahora se REVISA (página con token) en lugar de aprobarse a ciegas por email.
+-- status: preparing | pending_review | approved | rejected | expired | dispatched (histórico)
+ALTER TABLE revival_batches ADD COLUMN IF NOT EXISTS review_token text;
+ALTER TABLE revival_batches ADD COLUMN IF NOT EXISTS expires_at   timestamptz;
+
+-- Un borrador por contacto y toque: el texto REAL que el dueño ve, edita, envía o salta.
+CREATE TABLE IF NOT EXISTS revival_drafts (
+  id             bigserial PRIMARY KEY,
+  batch_id       text        NOT NULL,
+  contact_id     text        NOT NULL,
+  touch          integer     NOT NULL,
+  kind           text        NOT NULL DEFAULT 'new',     -- new | follow_up
+  status         text        NOT NULL,                   -- pending_review | approved | skipped | blocked | failed | deferred | sent
+  body_core      text,                                   -- texto editable (sin el pie de baja)
+  body           text,                                   -- texto final que se envía (con pie de baja)
+  original_body  text,                                   -- lo que generó la IA, para medir cuánto edita el dueño
+  edited         boolean     NOT NULL DEFAULT false,
+  reason         text,                                   -- por qué está blocked/failed/skipped
+  tz             text,
+  tz_source      text,                                   -- contact | phone | default
+  send_after     timestamptz,                            -- si está diferido por horario: cuándo abre la ventana
+  execution_id   text,
+  created_at     timestamptz NOT NULL DEFAULT now(),
+  decided_at     timestamptz,
+  sent_at        timestamptz
+);
+CREATE UNIQUE INDEX IF NOT EXISTS revival_drafts_unique_idx ON revival_drafts (batch_id, contact_id, touch);
+CREATE INDEX IF NOT EXISTS revival_drafts_status_idx ON revival_drafts (status, send_after);

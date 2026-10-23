@@ -1,0 +1,319 @@
+{
+  "id": "revivalqueue0001",
+  "name": "Revival · Send Queue (Auditable)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "*/15 * * * *"
+            }
+          ]
+        }
+      },
+      "id": "00000000-0000-4000-8000-000000000426",
+      "name": "Queue Schedule",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        100
+      ],
+      "notes": "Cada 15 minutos. Libera los borradores diferidos cuyo horario ya abrió y reintenta los aprobados que nunca se despacharon."
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "revival-queue",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "00000000-0000-4000-8000-000000000428",
+      "name": "Manual Trigger (webhook)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        320
+      ],
+      "webhookId": "00000000-0000-4000-8000-000000000427",
+      "notes": "Para demos y pruebas: POST /webhook/revival-queue."
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "return { json: { config: {\"aiMode\":\"mock\",\"crmMode\":\"mock\",\"model\":\"claude-sonnet-5-5\",\"inactivityDays\":90,\"maxPerRun\":10,\"maxTouches\":3,\"gapDays\":[3,5],\"defaultCountryCode\":\"57\",\"bookingUrl\":\"https://cal.example.com/book/demo\",\"senderName\":\"Equipo Demo\",\"ownerEmail\":\"owner@example.com\",\"fromEmail\":\"n8n@localhost\",\"approvalTimeoutHours\":24,\"replyConfidenceThreshold\":0.6,\"internalToken\":\"local-dev-token\",\"prepareUrl\":\"http://localhost:5678/webhook/revival-prepare\",\"touchUrl\":\"http://localhost:5678/webhook/revival-touch\",\"publicBaseUrl\":\"http://localhost:5678\",\"ghlLocationId\":\"TU_GHL_LOCATION_ID\",\"defaultTimezone\":\"America/Bogota\",\"sendWindow\":{\"startHour\":9,\"endHour\":19,\"weekdays\":[1,2,3,4,5]},\"dataLabel\":\"TEST DATA · synthetic contacts\"} } };"
+      },
+      "id": "00000000-0000-4000-8000-000000000429",
+      "name": "Prepare Run",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT d.id AS draft_id\nFROM revival_drafts d JOIN revival_batches b ON b.batch_id = d.batch_id\nWHERE b.status = 'approved'\n  AND ((d.status = 'deferred' AND d.send_after <= now()) OR (d.status = 'approved' AND d.decided_at < now() - interval '5 minutes'))\nORDER BY d.id LIMIT 25",
+        "options": {}
+      },
+      "id": "00000000-0000-4000-8000-000000000430",
+      "name": "Find Due",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        480,
+        200
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "postgresLocal01",
+          "name": "Postgres local (automations)"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000,
+      "alwaysOutputData": true,
+      "notes": "deferred: su ventana horaria ya abrió. approved con más de 5 min: red de seguridad por si el despacho original falló."
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const cfg = $('Prepare Run').first().json.config;\nreturn $input.all().map(i => i.json).filter(r => r.draft_id).map(r => ({ json: { draft_id: Number(r.draft_id), token: cfg.internalToken, touch_url: cfg.touchUrl } }));"
+      },
+      "id": "00000000-0000-4000-8000-000000000431",
+      "name": "Expand Due",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        720,
+        200
+      ],
+      "notes": "Sin nada pendiente no devuelve ítems: el flujo termina sin ruido en el log."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.touch_url }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-revival-token",
+              "value": "={{ $json.token }}"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ draft_id: $json.draft_id }) }}",
+        "options": {
+          "timeout": 30000,
+          "batching": {
+            "batch": {
+              "batchSize": 1,
+              "batchInterval": 1000
+            }
+          },
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "00000000-0000-4000-8000-000000000432",
+      "name": "Dispatch Send",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        960,
+        200
+      ],
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "notes": "Send Touch vuelve a comprobar TODO (guarda, bajas, orden y horario) antes de enviar; aquí solo se le avisa."
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const res = $input.all().map(i => i.json);\nconst count = c => res.filter(r => r.statusCode === c).length;\nconst failures = res.filter(r => ![200, 202, 409].includes(r.statusCode));\nreturn [{ json: { dispatch: { total: res.length, accepted_or_deferred: count(202), blocked: count(409), duplicate: count(200), failed: failures.length, failures: failures.slice(0, 5).map(f => f.error ? JSON.stringify(f.error).slice(0, 200) : 'status ' + f.statusCode) } } }];"
+      },
+      "id": "00000000-0000-4000-8000-000000000433",
+      "name": "Summarize Dispatch",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1200,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const s = $input.item.json;\nif (s.dispatch.failed > 0) throw new Error('Send queue: ' + s.dispatch.failed + ' dispatch(es) failed: ' + s.dispatch.failures.join(' | ') + '. They stay queued and will be retried.');\nreturn { json: s };"
+      },
+      "id": "00000000-0000-4000-8000-000000000434",
+      "name": "Assert Dispatch",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1440,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO execution_log (run_id, workflow, entity_id, step, status, error, detail) VALUES ($1, $2, NULLIF($3, ''), $4, $5, NULLIF($6, ''), $7::jsonb)",
+        "options": {
+          "queryReplacement": "={{ [$execution.id, \"revival-queue\", String(($execution.id) ?? ''), \"queue_dispatched\", $json.dispatch.failed > 0 ? 'failed' : 'ok', ($json.dispatch.failures.join(' | ')) ?? '', JSON.stringify(({ dispatch: $json.dispatch }))] }}"
+        }
+      },
+      "id": "00000000-0000-4000-8000-000000000435",
+      "name": "Log · queue_dispatched",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1200,
+        70
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "postgresLocal01",
+          "name": "Postgres local (automations)"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000,
+      "notes": "Log de ejecución (Postgres). Rama lateral."
+    },
+    {
+      "parameters": {
+        "content": "## Revival · Send Queue\nEvery 15 min: sends the drafts that were held outside the contact's sending hours once their window opens. Each send is re-checked by Send Touch.",
+        "width": 1440,
+        "height": 120,
+        "color": 7
+      },
+      "id": "00000000-0000-4000-8000-000000000436",
+      "name": "Note 10",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -20,
+        -250
+      ]
+    }
+  ],
+  "connections": {
+    "Summarize Dispatch": {
+      "main": [
+        [
+          {
+            "node": "Log · queue_dispatched",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Assert Dispatch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Queue Schedule": {
+      "main": [
+        [
+          {
+            "node": "Prepare Run",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Manual Trigger (webhook)": {
+      "main": [
+        [
+          {
+            "node": "Prepare Run",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Run": {
+      "main": [
+        [
+          {
+            "node": "Find Due",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find Due": {
+      "main": [
+        [
+          {
+            "node": "Expand Due",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Expand Due": {
+      "main": [
+        [
+          {
+            "node": "Dispatch Send",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Dispatch Send": {
+      "main": [
+        [
+          {
+            "node": "Summarize Dispatch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/Bogota",
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all",
+    "saveManualExecutions": true,
+    "saveExecutionProgress": true,
+    "errorWorkflow": "errhandler000001"
+  },
+  "active": false,
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": false
+  }
+}

@@ -345,14 +345,14 @@ ON CONFLICT (lead_id) DO UPDATE SET tier = EXCLUDED.tier, score = EXCLUDED.score
   L('Build Audit Record', { step: 'completed', status: "($json.status === 'crm_failed' || ($json.outreach && $json.outreach.status === 'send_failed')) ? 'failed' : 'ok'", error: "$json.status === 'crm_failed' ? 'crm_failed' : (($json.outreach && $json.outreach.status === 'send_failed') ? 'send_failed' : '')", detail: '({ status: $json.status, tier: $json.decision ? $json.decision.tier : null, outreach: $json.outreach ? $json.outreach.status : null })' });
 
   // ── Notas ──
-  w.note('## 1 · Ingesta + idempotencia (determinístico)\nAdapta formatos de canal, valida, normaliza y reclama la clave. Responde 202 / 422 / 200-duplicado de inmediato.', [col(0) - 20, -190], col(8) - 120, 150)
-   .note('## 2 · Enriquecimiento + Juicio (IA)\nReglas contra el ICP configurable; Claude puntúa fit + confianza + citas verbatim y redacta el primer mensaje. Reintentos con backoff; si falla, ai_failed → humano.', [8 * 240 - 20, -420], col(7), 140)
-   .note('## 3 · Compuerta (determinístico)\nUmbrales explícitos deciden si se requiere humano.', [col(15) - 20, -420], 300, 130)
-   .note('## 4 · Humano\nAprobación del lead por email. Timeout = no aprobado.', [col(17) - 20, -420], 800, 110)
-   .note('## 5 · CRM\nUpsert con backoff.', [col(20) - 20, -420], 1100, 110)
-   .note('## 6 · Leads calientes: vendedor + primer mensaje\nRound-robin → aviso al dueño → el VENDEDOR aprueba el borrador → recién entonces se envía al lead.', [col(26) - 20, -420], 2200, 130)
-   .note('## 7 · Evidencia\nAuditoría en ./audit/, cierre de idempotencia y resultado para el reporte semanal.', [col(36) - 20, -420], 1000, 110)
-   .note('### Log por paso → Postgres (execution_log)\nLos nodos "Log · …" son ramas laterales: no cambian el estado del flujo. Si Postgres cae, el flujo falla ruidosamente.', [col(0) - 20, 720], 760, 110);
+  w.note('## 1 · Intake + idempotency (deterministic)\nAdapts channel formats, validates, normalizes and claims the key. Replies 202 / 422 / 200-duplicate immediately.', [col(0) - 20, -190], col(8) - 120, 150)
+   .note('## 2 · Enrichment + Judgment (AI)\nRules against a configurable ICP; Claude scores fit + confidence + verbatim quotes and drafts the first message. Retries with backoff; on failure, ai_failed → human.', [8 * 240 - 20, -420], col(7), 140)
+   .note('## 3 · Gate (deterministic)\nExplicit thresholds decide whether a human is required.', [col(15) - 20, -420], 300, 130)
+   .note('## 4 · Human\nLead approval by email. Timeout = not approved.', [col(17) - 20, -420], 700, 110)
+   .note('## 5 · CRM\nUpsert with backoff.', [col(20) - 20, -420], 1100, 110)
+   .note('## 6 · Hot leads: sales rep + first message\nRound-robin → owner notified → the REP approves the draft → only then is it sent to the lead.', [col(26) - 20, -420], 2200, 130)
+   .note('## 7 · Evidence\nAudit trail in ./audit/, idempotency close-out and result for the weekly report.', [col(36) - 20, -420], 1000, 110)
+   .note('### Per-step log → Postgres (execution_log)\nThe "Log · …" nodes are side branches: they do not change flow state. If Postgres goes down, the flow fails loudly.', [col(0) - 20, 720], 760, 110);
 
   // ── Conexiones principales ──
   w.link('Lead Webhook', 'Config').link('Config', 'Normalize & Validate').link('Normalize & Validate', 'Valid?')

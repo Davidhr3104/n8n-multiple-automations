@@ -354,7 +354,7 @@
         "operation": "executeQuery",
         "query": "INSERT INTO execution_log (run_id, workflow, entity_id, step, status, error, detail) VALUES ($1, $2, NULLIF($3, ''), $4, $5, NULLIF($6, ''), $7::jsonb)",
         "options": {
-          "queryReplacement": "={{ [$execution.id, \"weekly-report\", ($json.idem.key) ?? '', \"claude_report_retry\", 'retrying', ($json.http.reason) ?? '', JSON.stringify(({ attempt: $json.http.attempt, delay_s: $json.http.delay_s, status: $json.http.status }))] }}"
+          "queryReplacement": "={{ [$execution.id, \"weekly-report\", String(($json.idem.key) ?? ''), \"claude_report_retry\", 'retrying', ($json.http.reason) ?? '', JSON.stringify(({ attempt: $json.http.attempt, delay_s: $json.http.delay_s, status: $json.http.status }))] }}"
         }
       },
       "id": "00000000-0000-4000-8000-000000000116",
@@ -494,7 +494,7 @@
         "operation": "executeQuery",
         "query": "INSERT INTO execution_log (run_id, workflow, entity_id, step, status, error, detail) VALUES ($1, $2, NULLIF($3, ''), $4, $5, NULLIF($6, ''), $7::jsonb)",
         "options": {
-          "queryReplacement": "={{ [$execution.id, \"weekly-report\", ($json.idem.key) ?? '', \"claimed\", $json.idem.is_new ? 'ok' : 'duplicate', ('') ?? '', JSON.stringify(({ trigger: $json.trigger }))] }}"
+          "queryReplacement": "={{ [$execution.id, \"weekly-report\", String(($json.idem.key) ?? ''), \"claimed\", $json.idem.is_new ? 'ok' : 'duplicate', ('') ?? '', JSON.stringify(({ trigger: $json.trigger }))] }}"
         }
       },
       "id": "00000000-0000-4000-8000-000000000123",
@@ -521,7 +521,7 @@
         "operation": "executeQuery",
         "query": "INSERT INTO execution_log (run_id, workflow, entity_id, step, status, error, detail) VALUES ($1, $2, NULLIF($3, ''), $4, $5, NULLIF($6, ''), $7::jsonb)",
         "options": {
-          "queryReplacement": "={{ [$execution.id, \"weekly-report\", ($json.idem.key) ?? '', \"metrics_loaded\", 'ok', ('') ?? '', JSON.stringify(({ totals: $json.metrics.totals, channels: $json.metrics.by_channel.length }))] }}"
+          "queryReplacement": "={{ [$execution.id, \"weekly-report\", String(($json.idem.key) ?? ''), \"metrics_loaded\", 'ok', ('') ?? '', JSON.stringify(({ totals: $json.metrics.totals, channels: $json.metrics.by_channel.length }))] }}"
         }
       },
       "id": "00000000-0000-4000-8000-000000000124",
@@ -548,7 +548,7 @@
         "operation": "executeQuery",
         "query": "INSERT INTO execution_log (run_id, workflow, entity_id, step, status, error, detail) VALUES ($1, $2, NULLIF($3, ''), $4, $5, NULLIF($6, ''), $7::jsonb)",
         "options": {
-          "queryReplacement": "={{ [$execution.id, \"weekly-report\", ($json.idem.key) ?? '', \"narrative\", 'ok', ('') ?? '', JSON.stringify(({ source: \"mock\" }))] }}"
+          "queryReplacement": "={{ [$execution.id, \"weekly-report\", String(($json.idem.key) ?? ''), \"narrative\", 'ok', ('') ?? '', JSON.stringify(({ source: \"mock\" }))] }}"
         }
       },
       "id": "00000000-0000-4000-8000-000000000125",
@@ -575,7 +575,7 @@
         "operation": "executeQuery",
         "query": "INSERT INTO execution_log (run_id, workflow, entity_id, step, status, error, detail) VALUES ($1, $2, NULLIF($3, ''), $4, $5, NULLIF($6, ''), $7::jsonb)",
         "options": {
-          "queryReplacement": "={{ [$execution.id, \"weekly-report\", ($json.idem.key) ?? '', \"narrative\", $json.narrative.ok ? 'ok' : 'failed', ($json.narrative.error ?? '') ?? '', JSON.stringify(({ source: \"claude\" }))] }}"
+          "queryReplacement": "={{ [$execution.id, \"weekly-report\", String(($json.idem.key) ?? ''), \"narrative\", $json.narrative.ok ? 'ok' : 'failed', ($json.narrative.error ?? '') ?? '', JSON.stringify(({ source: \"claude\" }))] }}"
         }
       },
       "id": "00000000-0000-4000-8000-000000000126",
@@ -602,7 +602,7 @@
         "operation": "executeQuery",
         "query": "INSERT INTO execution_log (run_id, workflow, entity_id, step, status, error, detail) VALUES ($1, $2, NULLIF($3, ''), $4, $5, NULLIF($6, ''), $7::jsonb)",
         "options": {
-          "queryReplacement": "={{ [$execution.id, \"weekly-report\", ($json.idem.key) ?? '', \"report_built\", $json.report_source === 'fallback_after_ai_failure' ? 'failed' : 'ok', ($json.ai_error ?? '') ?? '', JSON.stringify(({ report_source: $json.report_source }))] }}"
+          "queryReplacement": "={{ [$execution.id, \"weekly-report\", String(($json.idem.key) ?? ''), \"report_built\", $json.report_source === 'fallback_after_ai_failure' ? 'failed' : 'ok', ($json.ai_error ?? '') ?? '', JSON.stringify(({ report_source: $json.report_source }))] }}"
         }
       },
       "id": "00000000-0000-4000-8000-000000000127",
@@ -629,7 +629,7 @@
         "operation": "executeQuery",
         "query": "INSERT INTO execution_log (run_id, workflow, entity_id, step, status, error, detail) VALUES ($1, $2, NULLIF($3, ''), $4, $5, NULLIF($6, ''), $7::jsonb)",
         "options": {
-          "queryReplacement": "={{ [$execution.id, \"weekly-report\", ($json.idem.key) ?? '', \"report_sent\", $json.sent.ok ? 'ok' : 'failed', ($json.sent.error ?? '') ?? '', JSON.stringify(({ to: $json.config.ownerEmail }))] }}"
+          "queryReplacement": "={{ [$execution.id, \"weekly-report\", String(($json.idem.key) ?? ''), \"report_sent\", $json.sent.ok ? 'ok' : 'failed', ($json.sent.error ?? '') ?? '', JSON.stringify(({ to: $json.config.ownerEmail }))] }}"
         }
       },
       "id": "00000000-0000-4000-8000-000000000128",
@@ -653,7 +653,7 @@
     },
     {
       "parameters": {
-        "content": "## Reporte semanal\nCifras: SQL determinístico sobre lead_outcomes + execution_log. Narrativa: Claude (o mock) usando SOLO esas cifras. Si Claude falla, sale igual con resumen determinístico y lo declara.",
+        "content": "## Weekly report\nFigures: deterministic SQL over lead_outcomes + execution_log. Narrative: Claude (or mock) using ONLY those figures. If Claude fails, it still ships with a deterministic summary and says so.",
         "width": 1680,
         "height": 130,
         "color": 7
@@ -669,7 +669,7 @@
     },
     {
       "parameters": {
-        "content": "### Log por paso → Postgres\nNodos \"Log · …\": ramas laterales, no alteran el flujo.",
+        "content": "### Per-step log → Postgres\nNodes \"Log · …\": side branches, they do not alter the flow.",
         "width": 500,
         "height": 90,
         "color": 7

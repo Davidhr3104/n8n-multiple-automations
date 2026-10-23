@@ -153,6 +153,24 @@ test('bookingMessage: determinístico, con el link de la config (la IA no escrib
 });
 
 // ───────────── guarda de envío ─────────────
+test('canPrepare: solo se generan borradores con el lote en preparación', () => {
+  const row = { batch_status: 'preparing', suppressed: false, state_status: 'new', step: 0 };
+  assert.equal(R.canPrepare(row, 1, { maxTouches: 3 }).ok, true);
+  assert.equal(R.canPrepare({ ...row, batch_status: 'approved' }, 1, { maxTouches: 3 }).reason, 'batch_not_preparing');
+  assert.equal(R.canPrepare({ ...row, suppressed: true }, 1, { maxTouches: 3 }).reason, 'suppressed');
+  assert.equal(R.canPrepare({ ...row, state_status: 'active', step: 1 }, 1, { maxTouches: 3 }).reason, 'wrong_touch_order');
+});
+
+test('canSendDraft: borrador aprobado (o diferido) + lote aprobado + sin baja + orden de toques', () => {
+  const row = { draft_status: 'approved', batch_status: 'approved', suppressed: false, state_status: 'new', step: 0 };
+  assert.equal(R.canSendDraft(row, 1, { maxTouches: 3 }).ok, true);
+  assert.equal(R.canSendDraft({ ...row, draft_status: 'deferred' }, 1, { maxTouches: 3 }).ok, true);
+  for (const s of ['pending_review', 'skipped', 'blocked', 'sent', 'failed']) assert.equal(R.canSendDraft({ ...row, draft_status: s }, 1, { maxTouches: 3 }).reason, `draft_${s}`, s);
+  assert.equal(R.canSendDraft({ ...row, batch_status: 'pending_review' }, 1, { maxTouches: 3 }).reason, 'batch_not_approved');
+  assert.equal(R.canSendDraft({ ...row, suppressed: true }, 1, { maxTouches: 3 }).reason, 'suppressed');
+  assert.equal(R.canSendDraft(undefined, 1, { maxTouches: 3 }).ok, false);
+});
+
 test('canSend: exige lote aprobado, sin baja, estado válido y orden de toques', () => {
   const ok = { batch_status: 'approved', suppressed: false, state_status: 'new', step: 0 };
   assert.equal(R.canSend(ok, 1, { maxTouches: 3 }).ok, true);

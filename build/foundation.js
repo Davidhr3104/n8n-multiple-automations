@@ -8,10 +8,16 @@ const ROOT = path.join(__dirname, '..');
 const lib = name => fs.readFileSync(path.join(ROOT, 'lib', `${name}.js`), 'utf8');
 
 // Embebe lib/<name>.js dentro de un nodo Code: n8n no permite require() de archivos locales.
+// Si una librería hace require('./otra'), esa otra debe ir ANTES en la lista: se registra en __libs y un require local la resuelve.
 function embed(libs, glue) {
-  const blocks = libs.map(({ file, exports }) =>
-    `const { ${exports.join(', ')} } = (() => {\n  const module = { exports: {} };\n${lib(file)}\n  return module.exports;\n})();`);
-  return `${blocks.join('\n')}\n\n${glue}`.trim();
+  const needsRegistry = libs.some(({ file }) => /\brequire\(/.test(lib(file)));
+  const blocks = libs.map(({ file, exports }) => {
+    const src = lib(file);
+    const shim = /\brequire\(/.test(src) ? "  const require = n => __libs[String(n).replace(/^\\.\\//, '')];\n" : '';
+    const reg = needsRegistry ? `  __libs['${file}'] = module.exports;\n` : '';
+    return `const { ${exports.join(', ')} } = (() => {\n  const module = { exports: {} };\n${shim}${src}\n${reg}  return module.exports;\n})();`;
+  });
+  return `${needsRegistry ? 'const __libs = {};\n' : ''}${blocks.join('\n')}\n\n${glue}`.trim();
 }
 
 // Credenciales referenciadas por los nodos. Las de infraestructura local no llevan secretos reales.
@@ -114,7 +120,7 @@ function logBranch(w, from, o) {
     runId = '$execution.id', outputIndex = 0, name = `Log · ${step}`, dy = -190,
   } = o;
   const [x, y] = w.pos(from);
-  const params = `[${runId}, ${JSON.stringify(workflow)}, (${entity}) ?? '', ${JSON.stringify(step)}, ${status}, (${error}) ?? '', JSON.stringify(${detail})]`;
+  const params = `[${runId}, ${JSON.stringify(workflow)}, String((${entity}) ?? ''), ${JSON.stringify(step)}, ${status}, (${error}) ?? '', JSON.stringify(${detail})]`;
   w.add(name, 'n8n-nodes-base.postgres', 2.6, [x, y + dy], {
     operation: 'executeQuery',
     query: "INSERT INTO execution_log (run_id, workflow, entity_id, step, status, error, detail) VALUES ($1, $2, NULLIF($3, ''), $4, $5, NULLIF($6, ''), $7::jsonb)",

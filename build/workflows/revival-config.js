@@ -16,7 +16,18 @@ module.exports = {
     approvalTimeoutHours: 24,
     replyConfidenceThreshold: 0.6,
     internalToken: 'local-dev-token',  // cabecera x-revival-token entre workflows. En producción: Header Auth real + secreto
-    touchUrl: 'http://localhost:5678/webhook/revival-touch',
+    prepareUrl: 'http://localhost:5678/webhook/revival-prepare',   // genera el borrador de un contacto
+    touchUrl: 'http://localhost:5678/webhook/revival-touch',       // envía un borrador aprobado
+    publicBaseUrl: 'http://localhost:5678',                        // base de los links que recibe el dueño (revisión)
     ghlLocationId: 'TU_GHL_LOCATION_ID',
+    // Horario de envío: solo en horario laboral LOCAL del contacto. Sin zona conocida se usa defaultTimezone y se declara.
+    // REVIVAL_WINDOW_START/END permiten ensanchar la ventana en pruebas (no usar en producción).
+    defaultTimezone: 'America/Bogota',
+    sendWindow: {
+      startHour: process.env.REVIVAL_WINDOW_START !== undefined ? Number(process.env.REVIVAL_WINDOW_START) : 9,
+      endHour: process.env.REVIVAL_WINDOW_END !== undefined ? Number(process.env.REVIVAL_WINDOW_END) : 19,
+      weekdays: process.env.REVIVAL_WINDOW_DAYS ? process.env.REVIVAL_WINDOW_DAYS.split(',').map(Number) : [1, 2, 3, 4, 5],   // 1=lunes .. 7=domingo
+    },
+    dataLabel: 'TEST DATA · synthetic contacts',   // rótulo visible en el panel y en la página de revisión
   },
 };

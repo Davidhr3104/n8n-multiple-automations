@@ -14,6 +14,10 @@ const builders = [
   require('./workflows/revival-run'),
   require('./workflows/revival-touch'),
   require('./workflows/revival-reply'),
+  require('./workflows/revival-prepare'),
+  require('./workflows/revival-review'),
+  require('./workflows/revival-queue'),
+  require('./workflows/revival-dashboard'),
 ];
 
 fs.mkdirSync(path.join(ROOT, 'workflows'), { recursive: true });
