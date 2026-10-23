@@ -24,6 +24,7 @@ Notas de diseño:
 |---|---|---|---|
 | 5 | Calificación de leads + reporte semanal | **HECHA en local (modo mock/live)** — ver abajo | Probar con keys reales (Claude, GHL); contratos de Meta Lead Ads y email sin verificar |
 | 1 | Revival de leads (GHL) | **HECHA en local (modo mock/live)** — ver abajo | Probar con keys reales; contratos de GHL (búsqueda de contactos, conversations/messages, custom fields) y del webhook de respuestas entrantes sin verificar |
+| 6 | Conversational Qualifier + Booking (GHL) | **ESPECIFICADA, sin construir**: spec en `docs/specs/conversational-qualifier-booking.md` | Todo (estimado 20–25 h). Cierra el embudo: Intake capta, Revival reactiva, este convierte. Reutiliza opt-out sin IA, Send Queue, Review Page y Error Handler. Ver `docs/NEXT-STEPS.md` |
 | 4 | Soporte con tickets y RAG | — | pgvector (la misma imagen Postgres necesita la extensión), clasificador intención/sentimiento, RAG, escalamiento |
 | 2 | Intake legal (Clio) | — | Extracción de datos del caso, conflicto de interés, matter en Clio |
 | 3 | Pipeline e-commerce (Shopify) | — | Validación SKU/variantes/precios, copy con voz de marca, revisión en Sheets, API Shopify |
@@ -46,7 +47,9 @@ Defectos encontrados y corregidos durante la #5: `null >= 0` marcaba leads sin t
 
 ## #1 — Revival de leads (hecha)
 
-Tres workflows: `Revival · Daily Run` (38 nodos), `Revival · Send Touch` (64) y `Revival · Handle Reply` (79). Datos sintéticos en `db/seed-revival.sql` (25 contactos con duplicados, inválidos, bajas, uno reciente y uno con inyección en el historial).
+> **Actualización v2 (2026-10-23):** el Daily Run ahora prepara los borradores reales y envía un link a una página de revisión (enviar / editar / saltar por lead) en vez de aprobar el lote a ciegas. Se añadieron horario de envío por zona del contacto (9–19 h, lunes a viernes), `Send Queue` (cada 15 min libera lo retenido) y un dashboard de solo lectura. Son 7 workflows de revival (Daily Run, Prepare Draft, Review Page, Send Touch, Send Queue, Handle Reply, Dashboard). Verificado en mock con datos sintéticos. El texto de abajo describe la v1: lo de "aprobación del lote" y "sin horario de silencio" ya quedó superado.
+
+Tres workflows (v1): `Revival · Daily Run` (38 nodos), `Revival · Send Touch` (64) y `Revival · Handle Reply` (79). Datos sintéticos en `db/seed-revival.sql` (25 contactos con duplicados, inválidos, bajas, uno reciente y uno con inyección en el historial).
 
 | Pieza | Cómo | Verificado |
 |---|---|---|

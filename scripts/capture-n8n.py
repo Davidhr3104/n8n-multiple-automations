@@ -28,6 +28,10 @@ WORKFLOWS = [
     ("04-revival-send-touch", "revivaltouch0001", "revival-touch.json", 4),
     ("05-revival-handle-reply", "revivalreply0001", "revival-reply.json", 5),
     ("06-error-handler", "errhandler000001", "error-handler.json", 1),
+    ("07-revival-prepare-draft", "revivalprepare01", "revival-prepare.json", 4),
+    ("08-revival-review-page", "revivalreview001", "revival-review.json", 3),
+    ("09-revival-send-queue", "revivalqueue0001", "revival-queue.json", 1),
+    ("10-revival-dashboard", "revivaldash00001", "revival-dashboard.json", 1),
 ]
 
 
