@@ -32,6 +32,10 @@ WORKFLOWS = [
     ("08-revival-review-page", "revivalreview001", "revival-review.json", 3),
     ("09-revival-send-queue", "revivalqueue0001", "revival-queue.json", 1),
     ("10-revival-dashboard", "revivaldash00001", "revival-dashboard.json", 1),
+    ("11-qualifier-inbound", "qualifierinbound1", "qualifier-inbound.json", 5),
+    ("12-qualifier-booking", "qualifierbooking1", "qualifier-booking.json", 5),
+    ("13-qualifier-send", "qualifiersend001", "qualifier-send.json", 3),
+    ("14-qualifier-stale-queue", "qualifierstale01", "qualifier-stale.json", 2),
 ]
 
 

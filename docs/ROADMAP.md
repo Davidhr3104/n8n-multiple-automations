@@ -24,7 +24,7 @@ Notas de diseño:
 |---|---|---|---|
 | 5 | Calificación de leads + reporte semanal | **HECHA en local (modo mock/live)** — ver abajo | Probar con keys reales (Claude, GHL); contratos de Meta Lead Ads y email sin verificar |
 | 1 | Revival de leads (GHL) | **HECHA en local (modo mock/live)** — ver abajo | Probar con keys reales; contratos de GHL (búsqueda de contactos, conversations/messages, custom fields) y del webhook de respuestas entrantes sin verificar |
-| 6 | Conversational Qualifier + Booking (GHL) | **ESPECIFICADA, sin construir**: spec en `docs/specs/conversational-qualifier-booking.md` | Todo (estimado 20–25 h). Cierra el embudo: Intake capta, Revival reactiva, este convierte. Reutiliza opt-out sin IA, Send Queue, Review Page y Error Handler. Ver `docs/NEXT-STEPS.md` |
+| 6 | Conversational Qualifier + Booking (GHL) | **HECHA en local (modo mock/live)**: 4 workflows (Inbound, Booking, Send Message, Stale & Queue). Spec en `docs/specs/conversational-qualifier-booking.md`. Prueba `scripts/smoke-qualifier.ps1`: 34 comprobaciones, todas PASS con datos sintéticos | Probar con keys y sub-cuenta reales de GHL; contratos de webhook entrante, Conversations, Calendars (slots y cita) y tags SIN verificar. Handoff = email con resumen (no reutiliza la Review Page todavía). Ver `docs/NEXT-STEPS.md` |
 | 4 | Soporte con tickets y RAG | — | pgvector (la misma imagen Postgres necesita la extensión), clasificador intención/sentimiento, RAG, escalamiento |
 | 2 | Intake legal (Clio) | — | Extracción de datos del caso, conflicto de interés, matter en Clio |
 | 3 | Pipeline e-commerce (Shopify) | — | Validación SKU/variantes/precios, copy con voz de marca, revisión en Sheets, API Shopify |

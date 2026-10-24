@@ -187,3 +187,70 @@ CREATE TABLE IF NOT EXISTS revival_drafts (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS revival_drafts_unique_idx ON revival_drafts (batch_id, contact_id, touch);
 CREATE INDEX IF NOT EXISTS revival_drafts_status_idx ON revival_drafts (status, send_after);
+
+-- ───────────── #6 Conversational Qualifier + Booking ─────────────
+-- Una fila por conversación. locked_until = bloqueo por contacto: dos mensajes seguidos del mismo lead nunca se procesan a la vez.
+CREATE TABLE IF NOT EXISTS conversation_state (
+  contact_id        text PRIMARY KEY,
+  status            text        NOT NULL DEFAULT 'active',      -- active | qualified | booked | disqualified | handoff | stale | dnc
+  step              text        NOT NULL DEFAULT 'qualifying',  -- qualifying | booking
+  answers           jsonb       NOT NULL DEFAULT '[]'::jsonb,   -- [{criterion, value, evidence}] con cita textual
+  offered_slots     jsonb,
+  attempts          integer     NOT NULL DEFAULT 0,
+  booking_attempts  integer     NOT NULL DEFAULT 0,
+  pending_criterion text,
+  name              text,
+  phone             text,
+  email             text,
+  timezone          text,
+  handoff_reason    text,
+  disqualify_reason text,
+  followup_sent_at  timestamptz,
+  last_inbound_at   timestamptz,
+  last_outbound_at  timestamptz,
+  locked_until      timestamptz,
+  updated_at        timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS messages_log (
+  id           bigserial PRIMARY KEY,
+  message_id   text UNIQUE,                 -- entrantes: id de GHL; salientes: 'out:<outbox_id>'
+  contact_id   text        NOT NULL,
+  direction    text        NOT NULL,        -- in | out
+  body         text        NOT NULL,
+  llm_output   jsonb,
+  execution_id text,
+  created_at   timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS messages_log_contact_idx ON messages_log (contact_id, created_at);
+
+-- Cola de salida: todo mensaje del bot pasa por aquí y se envía respetando el horario local del lead.
+CREATE TABLE IF NOT EXISTS qualifier_outbox (
+  id           bigserial PRIMARY KEY,
+  contact_id   text        NOT NULL,
+  kind         text        NOT NULL,        -- question | booking_offer | confirmation | close | followup
+  body         text        NOT NULL,
+  status       text        NOT NULL DEFAULT 'pending',   -- pending | sent | failed | blocked
+  reason       text,
+  tz           text,
+  tz_source    text,
+  send_after   timestamptz NOT NULL DEFAULT now(),
+  execution_id text,
+  created_at   timestamptz NOT NULL DEFAULT now(),
+  sent_at      timestamptz
+);
+CREATE INDEX IF NOT EXISTS qualifier_outbox_due_idx ON qualifier_outbox (status, send_after);
+
+CREATE TABLE IF NOT EXISTS bookings (
+  id             bigserial PRIMARY KEY,
+  contact_id     text        NOT NULL,
+  appointment_id text        NOT NULL,
+  slot_start     timestamptz NOT NULL,
+  rep            text,
+  created_at     timestamptz NOT NULL DEFAULT now()
+);
+-- El índice único es lo que decide una carrera por el mismo horario (mock del calendario de GHL).
+CREATE UNIQUE INDEX IF NOT EXISTS bookings_slot_unique_idx ON bookings (slot_start);
+
+-- Horarios ya ocupados en el calendario simulado (para probar conflictos).
+CREATE TABLE IF NOT EXISTS mock_calendar_busy (slot_start timestamptz PRIMARY KEY);

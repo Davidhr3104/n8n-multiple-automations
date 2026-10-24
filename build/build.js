@@ -18,6 +18,10 @@ const builders = [
   require('./workflows/revival-review'),
   require('./workflows/revival-queue'),
   require('./workflows/revival-dashboard'),
+  require('./workflows/qualifier-send'),
+  require('./workflows/qualifier-inbound'),
+  require('./workflows/qualifier-booking'),
+  require('./workflows/qualifier-stale'),
 ];
 
 fs.mkdirSync(path.join(ROOT, 'workflows'), { recursive: true });
