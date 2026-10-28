@@ -22,6 +22,8 @@ const builders = [
   require('./workflows/qualifier-inbound'),
   require('./workflows/qualifier-booking'),
   require('./workflows/qualifier-stale'),
+  require('./workflows/support-kb-ingest'),
+  require('./workflows/support-ticket'),
 ];
 
 fs.mkdirSync(path.join(ROOT, 'workflows'), { recursive: true });
@@ -38,6 +40,7 @@ for (const make of builders) {
 // Infra local: sin secretos reales, se reimporta en cada deploy (idempotente por id).
 const infra = [
   { id: 'smtpMailpit01', name: 'Mailpit (local SMTP)', type: 'smtp', data: { host: 'mailpit', port: 1025, secure: false, disableStartTls: true, user: '', password: '' } },
+  { id: 'postgresKb01', name: 'pgvector local (knowledge base)', type: 'postgres', data: { host: 'pgvector', port: 5432, database: 'knowledge', user: 'knowledge', password: 'knowledge_local', maxConnections: 10, allowUnauthorizedCerts: false, ssl: 'disable' } },
   { id: 'postgresLocal01', name: 'Postgres local (automations)', type: 'postgres', data: { host: 'postgres', port: 5432, database: 'automations', user: 'automations', password: 'automations_local', maxConnections: 20, allowUnauthorizedCerts: false, ssl: 'disable' } },
 ];
 // PLACEHOLDERS: solo se importan con deploy.ps1 -WithCredentials (la primera vez). Luego pones tus keys reales en la UI de n8n.
@@ -45,6 +48,12 @@ const placeholders = [
   { id: 'anthropicKey01', name: 'Anthropic API (PLACEHOLDER)', type: 'httpHeaderAuth', data: { name: 'x-api-key', value: 'TU_ANTHROPIC_API_KEY' } },
   { id: 'ghlKey01', name: 'GoHighLevel (PLACEHOLDER)', type: 'httpHeaderAuth', data: { name: 'Authorization', value: 'Bearer TU_GHL_PRIVATE_INTEGRATION_TOKEN' } },
 ];
+// Placeholders del Support Reply Agent (Gmail y proveedor de embeddings). Archivo aparte: así se pueden importar sin pisar las keys ya puestas.
+const supportPlaceholders = [
+  { id: 'gmailKey01', name: 'Gmail API (PLACEHOLDER)', type: 'httpHeaderAuth', data: { name: 'Authorization', value: 'Bearer TU_GMAIL_ACCESS_TOKEN' } },
+  { id: 'embeddingsKey01', name: 'Embeddings API (PLACEHOLDER)', type: 'httpHeaderAuth', data: { name: 'Authorization', value: 'Bearer TU_EMBEDDINGS_API_KEY' } },
+];
+fs.writeFileSync(path.join(ROOT, 'credentials', 'credentials-placeholders-support.json'), JSON.stringify(supportPlaceholders, null, 2));
 fs.writeFileSync(path.join(ROOT, 'credentials', 'credentials-infra.json'), JSON.stringify(infra, null, 2));
 fs.writeFileSync(path.join(ROOT, 'credentials', 'credentials-placeholders.json'), JSON.stringify(placeholders, null, 2));
 const legacy = path.join(ROOT, 'credentials', 'credentials.json');

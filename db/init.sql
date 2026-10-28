@@ -254,3 +254,29 @@ CREATE UNIQUE INDEX IF NOT EXISTS bookings_slot_unique_idx ON bookings (slot_sta
 
 -- Horarios ya ocupados en el calendario simulado (para probar conflictos).
 CREATE TABLE IF NOT EXISTS mock_calendar_busy (slot_start timestamptz PRIMARY KEY);
+
+-- ───────────── Support Reply Agent ─────────────
+CREATE TABLE IF NOT EXISTS support_tickets (
+  ticket_id     text PRIMARY KEY,
+  from_email    text        NOT NULL,
+  from_name     text,
+  subject       text,
+  body          text        NOT NULL,
+  thread_id     text,
+  message_id    text,
+  status        text        NOT NULL,   -- received | ignored | escalated | pending_review | auto_replied | approved_sent | rejected | no_response | failed
+  intent        text,
+  sentiment     text,
+  action        text,                   -- ignore | escalate | review | auto
+  reasons       jsonb       NOT NULL DEFAULT '[]'::jsonb,
+  top_similarity numeric,
+  confidence    numeric,
+  sources       jsonb       NOT NULL DEFAULT '[]'::jsonb,   -- fragmentos recuperados: id, doc, título, similitud
+  citations     jsonb       NOT NULL DEFAULT '[]'::jsonb,
+  reply_text    text,
+  execution_id  text,
+  created_at    timestamptz NOT NULL DEFAULT now(),
+  updated_at    timestamptz NOT NULL DEFAULT now(),
+  replied_at    timestamptz
+);
+CREATE INDEX IF NOT EXISTS support_tickets_status_idx ON support_tickets (status, created_at);

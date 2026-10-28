@@ -24,8 +24,11 @@ function embed(libs, glue) {
 const CRED = {
   smtp: { smtp: { id: 'smtpMailpit01', name: 'Mailpit (local SMTP)' } },
   pg: { postgres: { id: 'postgresLocal01', name: 'Postgres local (automations)' } },
+  pgKb: { postgres: { id: 'postgresKb01', name: 'pgvector local (knowledge base)' } },
   anthropic: { httpHeaderAuth: { id: 'anthropicKey01', name: 'Anthropic API (PLACEHOLDER)' } },
   ghl: { httpHeaderAuth: { id: 'ghlKey01', name: 'GoHighLevel (PLACEHOLDER)' } },
+  gmail: { httpHeaderAuth: { id: 'gmailKey01', name: 'Gmail API (PLACEHOLDER)' } },
+  embeddings: { httpHeaderAuth: { id: 'embeddingsKey01', name: 'Embeddings API (PLACEHOLDER)' } },
 };
 
 let seq = 0;
@@ -166,6 +169,11 @@ function pg(w, name, position, query, params, extra = {}) {
     { credentials: CRED.pg, retryOnFail: true, maxTries: 3, waitBetweenTries: 1000, ...extra });
 }
 
+// Consulta a la base de conocimiento (contenedor pgvector).
+function pgKb(w, name, position, query, params, extra = {}) {
+  return pg(w, name, position, query, params, { ...extra, credentials: CRED.pgKb });
+}
+
 function respond(w, name, position, statusCode, bodyExpr) {
   return w.add(name, 'n8n-nodes-base.respondToWebhook', 1.4, position,
     { respondWith: 'json', responseBody: `={{ JSON.stringify(${bodyExpr}) }}`, options: { responseCode: statusCode } });
@@ -207,4 +215,4 @@ function markIdempotency(w, o) {
     { notes: 'Cierra la clave: done, o failed si algo falló (así un reintento sí puede reprocesar).' });
 }
 
-module.exports = { ROOT, embed, CRED, uid, Workflow, code, codeAll, ifBool, ifEquals, logBranch, httpWithBackoff, pg, respond, idempotency, markIdempotency };
+module.exports = { ROOT, embed, CRED, uid, Workflow, code, codeAll, ifBool, ifEquals, logBranch, httpWithBackoff, pg, pgKb, respond, idempotency, markIdempotency };

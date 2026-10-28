@@ -31,6 +31,8 @@ services:
         condition: service_started
       postgres:
         condition: service_healthy
+      pgvector:
+        condition: service_healthy
 
   # Log de ejecuciones + idempotencia. Mismo SQL que Supabase (db/init.sql).
   postgres:
@@ -53,6 +55,27 @@ services:
       timeout: 3s
       retries: 10
 
+  # Base de conocimiento (RAG): Postgres con la extensión pgvector. Contenedor APARTE del log/idempotencia a propósito:
+  # cambiar la imagen del Postgres existente (Alpine) sobre el mismo volumen puede alterar el orden de sus índices de texto.
+  pgvector:
+    image: pgvector/pgvector:pg16
+    container_name: pgvector
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=knowledge
+      - POSTGRES_PASSWORD=knowledge_local        # solo local: el puerto está ligado a 127.0.0.1
+      - POSTGRES_DB=knowledge
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - kb_data:/var/lib/postgresql/data
+      - ./db/init-kb.sql:/docker-entrypoint-initdb.d/001-init-kb.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U knowledge -d knowledge"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
   # Buzón SMTP falso: captura TODOS los emails (aprobaciones, alertas) sin enviarlos fuera.
   mailpit:
     image: axllent/mailpit:latest
@@ -65,3 +88,4 @@ services:
 volumes:
   n8n_data:
   pg_data:
+  kb_data:

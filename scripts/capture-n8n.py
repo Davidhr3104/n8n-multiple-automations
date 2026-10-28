@@ -36,6 +36,8 @@ WORKFLOWS = [
     ("12-qualifier-booking", "qualifierbooking1", "qualifier-booking.json", 5),
     ("13-qualifier-send", "qualifiersend001", "qualifier-send.json", 3),
     ("14-qualifier-stale-queue", "qualifierstale01", "qualifier-stale.json", 2),
+    ("15-support-kb-ingest", "supportkbingest1", "support-kb-ingest.json", 2),
+    ("16-support-ticket-agent", "supportticket001", "support-ticket.json", 5),
 ]
 
 

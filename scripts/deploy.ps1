@@ -13,10 +13,14 @@ if ($LASTEXITCODE -ne 0) { throw 'build failed' }
 docker exec postgres psql -U automations -d automations -v ON_ERROR_STOP=1 -q -f /docker-entrypoint-initdb.d/001-init.sql
 if ($LASTEXITCODE -ne 0) { throw 'schema migration failed' }
 
+# Base de conocimiento (contenedor pgvector): esquema idempotente.
+docker exec pgvector psql -U knowledge -d knowledge -v ON_ERROR_STOP=1 -q -f /docker-entrypoint-initdb.d/001-init-kb.sql
+if ($LASTEXITCODE -ne 0) { throw 'knowledge base schema migration failed' }
+
 docker exec n8n n8n import:credentials --input=/import/credentials/credentials-infra.json
-if ($WithCredentials) { docker exec n8n n8n import:credentials --input=/import/credentials/credentials-placeholders.json }
+if ($WithCredentials) { docker exec n8n n8n import:credentials --input=/import/credentials/credentials-placeholders.json; docker exec n8n n8n import:credentials --input=/import/credentials/credentials-placeholders-support.json }
 docker exec n8n n8n import:workflow --separate --input=/import/workflows
-foreach ($id in 'errhandler000001', 'leadintake000001', 'weeklyreport0001', 'revivalrun000001', 'revivaltouch0001', 'revivalreply0001', 'revivalprepare01', 'revivalreview001', 'revivalqueue0001', 'revivaldash00001', 'qualifiersend001', 'qualifierinbound1', 'qualifierbooking1', 'qualifierstale01') { docker exec n8n n8n publish:workflow --id=$id }
+foreach ($id in 'errhandler000001', 'leadintake000001', 'weeklyreport0001', 'revivalrun000001', 'revivaltouch0001', 'revivalreply0001', 'revivalprepare01', 'revivalreview001', 'revivalqueue0001', 'revivaldash00001', 'qualifiersend001', 'qualifierinbound1', 'qualifierbooking1', 'qualifierstale01', 'supportkbingest1', 'supportticket001') { docker exec n8n n8n publish:workflow --id=$id }
 
 $since = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
 docker restart n8n | Out-Null
