@@ -72,3 +72,43 @@ Límites: la forma real del webhook de respuestas de GHL, la API de contactos/me
 - Slack como canal de aprobación (requiere crear la Slack app y pasar el token).
 - Todas las APIs externas se construyen con modo `mock`; los contratos reales no se verifican hasta tener credenciales de prueba.
 - Datos reales (p.ej. Rodrigo) nunca entran al repo: demos con datos sintéticos.
+
+## Catálogo de flujos del 28-oct-2026 (`n8n-flujos-catalogo.pdf`, 51 páginas)
+
+Documento de trabajo con la descripción y la guía de construcción de 18 sistemas. Las puntuaciones de los existentes las dio el agente de n8n; las prioridades 1–5 de los propuestos las fijó David. En los propuestos **no hay nada construido**: son especificaciones de diseño. Las cifras de prueba del PDF son las de este repositorio (31/31, 10 casos, 30 tickets), sin métricas de negocio ni clientes.
+
+### Existentes (construidos y probados)
+
+| # PDF | Sistema | Puntuación | Estado |
+|---|---|---|---|
+| 1 | Lead Revival (5 workflows) | 9/10 | Construido y probado |
+| 2 | Support Reply Agent (RAG) | 9/10 | Construido y probado (modo mock, datos sintéticos) |
+| 3 | SMS Qualifier + Booking | 8.5/10 | Construido y probado (10 casos); todavía sin cliente real |
+| 4 | Lead Intake & Qualification | 8/10 | Construido y probado |
+| 5 | Revival Review Page | 7.5/10 | Construido y probado |
+| 6 | Weekly Lead Report | 7/10 | Construido y probado |
+| 7 | Global Error Handler | 6.5/10 | Construido y probado |
+
+### Propuestos (solo diseño)
+
+| # PDF | Sistema | Prioridad | Sector | Stack propuesto | Qué haría |
+|---|---|---|---|---|---|
+| 8 | Invoice & Receipt Processor | **1** | Finanzas / e-commerce | Gmail, Claude (visión), Sheets/Airtable, Drive, Slack | Extrae los campos de facturas y recibos que llegan por email con confianza y evidencia por campo, valida la aritmética, detecta duplicados, archiva en Drive y pide aprobación en Slack |
+| 9 | Listing Inquiry Agent + Showing Follow-up | **2** | Real estate | GHL, Claude, Postgres/Sheets, GHL Calendars | Responde preguntas de un inmueble solo con su ficha, agenda visitas reutilizando el motor del SMS Qualifier y hace el seguimiento después de la visita |
+| 10 | No-show Reducer | **3** | Clínicas | Calendario/GHL, SMS o WhatsApp, Claude (solo texto libre) | Recordatorios a 48 h y 2 h con respuestas numéricas procesadas sin IA, reagendar, cancelar y lista de espera |
+| 11 | Order Issue Agent + Review Responder | **4** | E-commerce | Gmail/helpdesk, Shopify/WooCommerce, Claude, Slack, Postgres | Responde estado y seguimiento de pedidos con datos reales; escala reembolsos, daños y clientes molestos; redacta respuestas a reseñas con aprobación |
+| 12 | Client Onboarding | **5** | Operaciones | Formulario, firma electrónica, Drive/Docs, Notion, Slack, Gmail | Crea carpetas, genera y envía el contrato, crea el proyecto y las tareas al firmarse y arranca la secuencia de bienvenida |
+| 13 | Ticket Triage + SLA Watcher | — | Soporte | Gmail/helpdesk, Claude, Slack, Postgres | Clasifica prioridad, asigna, calcula el SLA y avisa antes de que se incumpla |
+| 14 | Content Repurposer | — | Marketing | RSS/YouTube/Drive, Claude, Notion/Sheets, Slack | De una pieza larga genera variantes por canal como borradores para aprobar; nada se publica solo |
+| 15 | Ads Weekly Report | — | Marketing | Meta Marketing API, Google Ads API, Postgres/Sheets, Claude | KPIs por SQL (gasto, CTR, CPA, ROAS, variación) y Claude solo narra los cambios |
+| 16 | Payment Reminders | — | Operaciones / finanzas | Stripe/contabilidad/Sheets, Gmail, SMS o WhatsApp, Postgres | Secuencia escalonada de cobro con tono creciente; se detiene al registrarse el pago y escala disputas |
+| 17 | CV Screener | — | Reclutamiento | Gmail/formulario, Claude, Sheets/Airtable, Slack | Compara cada CV con los requisitos con evidencia citada; la IA no rechaza a nadie, una persona decide |
+| 18 | WhatsApp Intake (Cloud API) | — | Cualquier sector | WhatsApp Cloud API, Drive, Claude, Sheets/CRM | Recibe mensajes y archivos, los guarda por contacto, extrae datos con evidencia, registra y confirma |
+
+**Orden sugerido de construcción (Anexo B del PDF):** 8 → 9 → 10 → 11 → 12; el resto (13–18) según la demanda de las ofertas que lleguen.
+Por qué: 8 es una demo muy visual con demanda transversal; 9 y 11 extienden sistemas que ya existen (SMS Qualifier y Support Reply Agent); 10 tiene un dolor fácil de medir; 12 sirve también para el propio negocio.
+
+### Notas de encaje con este repositorio
+- El PDF no incluye el **CRM ↔ Sheets Sync con dedupe** (plan en `docs/specs/crm-sheets-sync.md`, sin construir) ni los otros pendientes anteriores (legal Clio, e-commerce Shopify). **WhatsApp Intake** sí aparece (#18, sin prioridad numérica).
+- Cada propuesto reutiliza patrones ya construidos: config + modo mock/live, reintentos con backoff, salida validada en código, datos externos como no confiables, bajas sin IA, idempotencia, log por paso y aprobación humana.
+- Los nombres del PDF difieren de los de este repo (por ejemplo, "SMS Qualifier + Booking" = Conversational Qualifier + Booking, #6 arriba).
