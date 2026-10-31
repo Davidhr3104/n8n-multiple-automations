@@ -124,7 +124,7 @@ Une el catálogo del 28-oct con «workflows más pedidos» (116 ofertas, 26–30
 | 1 | **CRM ↔ Sheets Sync** | 50 | **Hecho (mock)** — 40/40 smoke, adaptadores live sin construir |
 | 2 | Invoice & Document Processor (#8 + #13) | 33 | **Hecho (mock)** — 34/34 smoke, extracción live y contabilidad live sin verificar |
 | 3 | Email / Ticket Triage + SLA Watcher (#4 + #13) | 24 | **Hecho (mock)** — 66/66 smoke, 26 tests de lib; Gmail/helpdesk reales y Claude en vivo sin verificar |
-| 4 | Recordatorios + No-show (#5) | 24 | Pendiente |
+| 4 | Recordatorios + No-show (#5 + #10) | 24 | **Hecho (mock)** — 61/61 smoke, 16 tests de lib; SMS/calendario reales y Claude en vivo sin verificar |
 | 5 | Client Onboarding (#7) | 23 | Pendiente |
 | 6 | SOP Generator (#6) | 23 | Pendiente |
 | 7 | E-commerce (Order Issue + Review Responder) | 18 | Pendiente (necesita tienda de desarrollo Shopify) |

@@ -31,6 +31,10 @@ const builders = [
   require('./workflows/triage-intake'),
   require('./workflows/triage-sla-watch'),
   require('./workflows/triage-update'),
+  require('./workflows/reminders-send'),
+  require('./workflows/reminders-reply'),
+  require('./workflows/reminders-noshow'),
+  require('./workflows/reminders-staff'),
 ];
 
 fs.mkdirSync(path.join(ROOT, 'workflows'), { recursive: true });

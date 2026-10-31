@@ -20,7 +20,7 @@ if ($LASTEXITCODE -ne 0) { throw 'knowledge base schema migration failed' }
 docker exec n8n n8n import:credentials --input=/import/credentials/credentials-infra.json
 if ($WithCredentials) { docker exec n8n n8n import:credentials --input=/import/credentials/credentials-placeholders.json; docker exec n8n n8n import:credentials --input=/import/credentials/credentials-placeholders-support.json }
 docker exec n8n n8n import:workflow --separate --input=/import/workflows
-foreach ($id in 'errhandler000001', 'leadintake000001', 'weeklyreport0001', 'revivalrun000001', 'revivaltouch0001', 'revivalreply0001', 'revivalprepare01', 'revivalreview001', 'revivalqueue0001', 'revivaldash00001', 'qualifiersend001', 'qualifierinbound1', 'qualifierbooking1', 'qualifierstale01', 'supportkbingest1', 'supportticket001', 'syncrun00000001', 'syncreview000001', 'syncweekly00001', 'invoiceintake0001', 'triageintake0001', 'triageslawatch01', 'triageupdate0001') { docker exec n8n n8n publish:workflow --id=$id }
+foreach ($id in 'errhandler000001', 'leadintake000001', 'weeklyreport0001', 'revivalrun000001', 'revivaltouch0001', 'revivalreply0001', 'revivalprepare01', 'revivalreview001', 'revivalqueue0001', 'revivaldash00001', 'qualifiersend001', 'qualifierinbound1', 'qualifierbooking1', 'qualifierstale01', 'supportkbingest1', 'supportticket001', 'syncrun00000001', 'syncreview000001', 'syncweekly00001', 'invoiceintake0001', 'triageintake0001', 'triageslawatch01', 'triageupdate0001', 'remindersend0001', 'reminderreply001', 'remindernoshow01', 'reminderstaff0001') { docker exec n8n n8n publish:workflow --id=$id }
 
 $since = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
 docker restart n8n | Out-Null

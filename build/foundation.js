@@ -113,6 +113,15 @@ const ifEquals = (expr, value) => ({
   options: {},
 });
 
+// Switch por igualdad de texto: una salida por clave (renombrada con la clave).
+const switchBy = (expr, keys) => ({
+  rules: { values: keys.map(k => ({
+    conditions: { options: { caseSensitive: true, leftValue: '', typeValidation: 'strict', version: 2 }, conditions: [{ id: uid(), leftValue: expr, rightValue: k, operator: { type: 'string', operation: 'equals' } }], combinator: 'and' },
+    renameOutput: true, outputKey: k,
+  })) },
+  options: {},
+});
+
 // ───────────── Log por paso (rama lateral: no altera el estado del flujo principal) ─────────────
 // ORDEN: con executionOrder v1 n8n ejecuta las ramas de una misma salida por posición, de ARRIBA a ABAJO.
 // Por eso el log va ENCIMA de su nodo (dy negativo): corre primero, en orden cronológico y antes de cualquier espera humana.
@@ -215,4 +224,4 @@ function markIdempotency(w, o) {
     { notes: 'Cierra la clave: done, o failed si algo falló (así un reintento sí puede reprocesar).' });
 }
 
-module.exports = { ROOT, embed, CRED, uid, Workflow, code, codeAll, ifBool, ifEquals, logBranch, httpWithBackoff, pg, pgKb, respond, idempotency, markIdempotency };
+module.exports = { ROOT, embed, CRED, uid, Workflow, code, codeAll, ifBool, ifEquals, switchBy, logBranch, httpWithBackoff, pg, pgKb, respond, idempotency, markIdempotency };

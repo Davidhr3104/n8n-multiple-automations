@@ -8,6 +8,7 @@ const { ROOT, SHOTS, CATALOG, facts } = require('./catalog-data');
 const { SYSTEMS, PRINCIPLES } = require('./site/systems');
 
 const OUT = path.join(ROOT, 'docs', 'catalog-site');
+const WORD = { 6: 'Six', 7: 'Seven', 8: 'Eight', 9: 'Nine', 10: 'Ten' };
 const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 const bySlug = Object.fromEntries(CATALOG.map(c => [c[0], c]));
 const KIND = { code: 'Code decides', ai: 'AI reads', person: 'A person' };
@@ -85,7 +86,7 @@ const cardHtml = (s, i) => `<article class="card"><div class="thumb"><img src="i
 
 const indexBody = `
 <section class="hero"><div class="wrap"><span class="eyebrow">Automation you can audit</span>
-<h1>Six systems that keep a person in the loop where the risk is.</h1>
+<h1>${WORD[SYSTEMS.length]} systems that keep a person in the loop where the risk is.</h1>
 <p class="lead">Built in n8n, Postgres and Claude. In each one, code makes the decisions and AI only reads, drafts and summarizes: what a model says is checked against evidence before anything moves.</p>
 <div class="notice">${svg('info', 'width="20" height="20"')}<p>Built and tested end to end with synthetic data in mock mode. Live accounts connect at the edges, and every system page says exactly what is still to wire up.</p></div>
 <div class="stats"><div class="stat"><b>${SYSTEMS.length}</b><span>systems, each solving one business problem</span></div><div class="stat"><b>${totalWorkflows}</b><span>n8n workflows, with real canvas captures</span></div><div class="stat"><b>${unitTests}</b><span>unit tests passing on the decision logic</span></div><div class="stat"><b>0</b><span>wrong automatic replies in a 30-ticket synthetic evaluation</span></div></div>
@@ -101,7 +102,7 @@ const indexBody = `
 
 fs.writeFileSync(path.join(OUT, 'index.html'), page({
   title: 'n8n systems catalog · automation you can audit', root: '', nav: 'systems',
-  desc: 'Six auditable automation systems built in n8n, Postgres and Claude, tested end to end with synthetic data.', body: indexBody,
+  desc: `${WORD[SYSTEMS.length]} auditable automation systems built in n8n, Postgres and Claude, tested end to end with synthetic data.`, body: indexBody,
 }));
 
 // ── Una página por sistema ──

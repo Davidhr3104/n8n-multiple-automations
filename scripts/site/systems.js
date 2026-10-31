@@ -83,6 +83,22 @@ module.exports.SYSTEMS = [
     live: ['Gmail or helpdesk intake and Slack are not connected: the webhook payload is the contract.', 'Claude and the embeddings provider have not run live.', 'No clock pause while waiting for the customer yet.'],
   },
   {
+    slug: 'appointment-reminders', name: 'Appointment Reminders + No-show',
+    problem: 'Fewer no-shows, without your team chasing every appointment.',
+    pitch: 'Reminders go out 48 hours and 2 hours before each appointment. Customers reply 1, 2 or 3 and code handles it with no AI: confirm, reschedule into a real free slot, or cancel and offer the freed slot to the waitlist. People who do not show up get one follow-up, and repeat no-shows are flagged to a person.',
+    workflows: ['24-reminders-send', '25-reminders-customer-reply', '26-reminders-noshow-sweep', '27-reminders-staff-update'],
+    shots: [['25-reminders-customer-reply', 'canvas', 2], ['24-reminders-send', 'execution', 1], ['26-reminders-noshow-sweep', 'canvas', 1]],
+    flow: [
+      [['code'], 'Decide what is due', 'Reminders 48 h and 2 h before, only for active appointments, once each, inside the contact’s sending hours.'],
+      [['code'], 'Send, then record', 'A reminder is recorded only after it was sent. A failed send retries next run and fails loudly.'],
+      [['code', 'ai'], 'Read the reply', '“1”, “2”, “3” and STOP are read by code. Only free text reaches the AI, which classifies the intent with its evidence.'],
+      [['code'], 'Rebook without double booking', 'A new time is claimed only if it is still free and the old one is released. A freed slot is offered to the waitlist.'],
+      [['person'], 'Catch the exceptions', 'No-shows get one follow-up. Repeat no-shows and anything doubtful go to a person; nothing is blocked or charged automatically.'],
+    ],
+    results: [['61/61', 'end-to-end checks'], ['16', 'unit tests on the reminder logic'], ['0', 'double bookings when two customers pick the same slot (tested)']],
+    live: ['Real SMS / WhatsApp and the calendar (GoHighLevel / Google Calendar) are not connected: locally the SMS is an email to a test inbox.', 'Claude has not run live on free-text replies.', 'Waitlist offers do not expire on their own yet.'],
+  },
+  {
     slug: 'invoice-processor', name: 'Invoice & Document Processor',
     problem: 'Post invoices only when every check passes.',
     pitch: 'AI reads the invoice and returns each field with the text it came from. Code verifies the evidence, the arithmetic, the dates, duplicates, the vendor’s bank account and the limit. Anything doubtful goes to a person.',

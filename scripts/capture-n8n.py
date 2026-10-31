@@ -45,6 +45,10 @@ WORKFLOWS = [
     ("21-triage-ticket-intake", "triageintake0001", "triage-intake.json", 5),
     ("22-triage-sla-watcher", "triageslawatch01", "triage-sla-watch.json", 3),
     ("23-triage-ticket-update", "triageupdate0001", "triage-update.json", 3),
+    ("24-reminders-send", "remindersend0001", "reminders-send.json", 3),
+    ("25-reminders-customer-reply", "reminderreply001", "reminders-reply.json", 5),
+    ("26-reminders-noshow-sweep", "remindernoshow01", "reminders-noshow.json", 3),
+    ("27-reminders-staff-update", "reminderstaff0001", "reminders-staff.json", 3),
 ]
 
 

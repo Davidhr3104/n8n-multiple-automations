@@ -490,3 +490,91 @@ CREATE TABLE IF NOT EXISTS triage_sla_alerts (
   recipients jsonb       NOT NULL DEFAULT '[]'::jsonb,
   sent_at    timestamptz NOT NULL DEFAULT now()
 );
+
+-- ───────────── Appointment Reminders + No-show Reducer ─────────────
+-- Datos de prueba (mock del calendario/CRM). En live: GoHighLevel / Google Calendar. Las bajas usan la misma suppression_list de Revival.
+CREATE TABLE IF NOT EXISTS appt_contacts (
+  contact_id text PRIMARY KEY,
+  name       text NOT NULL,
+  email      text,
+  phone      text,
+  timezone   text,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+-- Calendario mock: un horario, una cita. El UPDATE ... WHERE status = 'free' es lo que impide la doble reserva.
+CREATE TABLE IF NOT EXISTS appt_slots (
+  slot_id        text PRIMARY KEY,
+  starts_at      timestamptz(3) NOT NULL UNIQUE,
+  duration_min   integer NOT NULL DEFAULT 30,
+  service        text,
+  status         text NOT NULL DEFAULT 'free' CHECK (status IN ('free', 'booked')),
+  appointment_id text
+);
+CREATE TABLE IF NOT EXISTS appt_appointments (
+  appointment_id  text PRIMARY KEY,
+  contact_id      text NOT NULL,
+  service         text NOT NULL,
+  starts_at       timestamptz(3) NOT NULL,
+  duration_min    integer NOT NULL DEFAULT 30,
+  slot_id         text,
+  status          text NOT NULL CHECK (status IN ('scheduled', 'confirmed', 'cancelled', 'rescheduled', 'attended', 'no_show')),
+  checked_in_at   timestamptz(3),
+  no_show_at      timestamptz(3),
+  rescheduled_to  text,                 -- reagendar crea una cita nueva y enlaza ambas: cada cita tiene sus propios recordatorios
+  rescheduled_from text,
+  version         integer NOT NULL DEFAULT 1,
+  created_at      timestamptz NOT NULL DEFAULT now(),
+  updated_at      timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS appt_appointments_status_idx ON appt_appointments (status, starts_at);
+-- Un recordatorio por cita y tipo (r48 | r2 | noshow). Se registra DESPUÉS de enviarlo; 'skipped' deja el motivo a la vista.
+CREATE TABLE IF NOT EXISTS appt_reminders (
+  appointment_id text NOT NULL,
+  kind           text NOT NULL,
+  status         text NOT NULL CHECK (status IN ('sent', 'skipped')),
+  reason         text,
+  recipients     text,
+  execution_id   text,
+  created_at     timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (appointment_id, kind)
+);
+-- Qué espera cada contacto: respuesta al recordatorio, elección de horario o respuesta a una oferta de lista de espera.
+CREATE TABLE IF NOT EXISTS appt_conversation (
+  contact_id     text PRIMARY KEY,
+  awaiting       text CHECK (awaiting IN ('reminder', 'slot_choice', 'waitlist_offer')),
+  appointment_id text,
+  offered_slots  jsonb NOT NULL DEFAULT '[]'::jsonb,
+  offer_slot_id  text,
+  attempts       integer NOT NULL DEFAULT 0,
+  updated_at     timestamptz NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS appt_waitlist (
+  id              bigserial PRIMARY KEY,
+  contact_id      text NOT NULL,
+  service         text,
+  status          text NOT NULL DEFAULT 'waiting' CHECK (status IN ('waiting', 'offered', 'booked', 'removed')),
+  declined_slots  jsonb NOT NULL DEFAULT '[]'::jsonb,
+  offered_slot_id text,
+  created_at      timestamptz NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS appt_messages (
+  id             bigserial PRIMARY KEY,
+  contact_id     text NOT NULL,
+  direction      text NOT NULL,          -- in | out
+  kind           text NOT NULL,
+  body           text NOT NULL,
+  status         text NOT NULL,          -- sent | failed | received
+  appointment_id text,
+  execution_id   text,
+  created_at     timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS appt_messages_contact_idx ON appt_messages (contact_id, created_at);
+CREATE TABLE IF NOT EXISTS appt_events (
+  id             bigserial PRIMARY KEY,
+  appointment_id text NOT NULL,
+  event          text NOT NULL,
+  actor          text NOT NULL,
+  detail         jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at     timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS appt_events_idx ON appt_events (appointment_id);

@@ -40,6 +40,13 @@ module.exports.ES = {
     footnote: 'La evaluación usa embeddings locales basados en palabras: mide el pipeline y sus salvaguardas, no la precisión de un modelo real.',
     live: ['Gmail o helpdesk y Slack no están conectados: el payload del webhook es el contrato.', 'Claude y el proveedor de embeddings no se han ejecutado en vivo.', 'Aún no hay pausa del reloj mientras se espera al cliente.'],
   },
+  'appointment-reminders': {
+    problem: 'Menos inasistencias, sin que tu equipo persiga cada cita.',
+    pitch: 'Los recordatorios salen 48 horas y 2 horas antes de cada cita. El cliente responde 1, 2 o 3 y el código lo resuelve sin IA: confirmar, reagendar a un horario libre real, o cancelar y ofrecer el horario liberado a la lista de espera. Quien no llega recibe un seguimiento, y los reincidentes se señalan a una persona.',
+    flow: [['Decidir qué toca', 'Recordatorios 48 h y 2 h antes, solo de citas activas, una vez cada uno, dentro del horario de envío del contacto.'], ['Enviar y luego registrar', 'Un recordatorio se registra solo después de enviarse. Un envío fallido se reintenta en la siguiente corrida y falla de forma visible.'], ['Leer la respuesta', '“1”, “2”, “3” y STOP los lee el código. Solo el texto libre llega a la IA, que clasifica la intención con su evidencia.'], ['Reagendar sin doble reserva', 'Un horario nuevo se reclama solo si sigue libre y el anterior se libera. Un horario liberado se ofrece a la lista de espera.'], ['Atender las excepciones', 'Quien no llega recibe un seguimiento. Los reincidentes y todo lo dudoso van a una persona; nada se bloquea ni se cobra automáticamente.']],
+    results: ['comprobaciones de punta a punta', 'tests unitarios de la lógica de recordatorios', 'dobles reservas cuando dos clientes eligen el mismo horario (probado)'],
+    live: ['El SMS / WhatsApp reales y el calendario (GoHighLevel / Google Calendar) no están conectados: en local el SMS es un correo a un buzón de pruebas.', 'Claude no se ha ejecutado en vivo con respuestas de texto libre.', 'Las ofertas de lista de espera aún no caducan solas.'],
+  },
   'invoice-processor': {
     problem: 'Contabiliza facturas solo cuando pasan todas las comprobaciones.',
     pitch: 'La IA lee la factura y devuelve cada campo con el texto del que salió. El código verifica la evidencia, la aritmética, las fechas, los duplicados, la cuenta bancaria del proveedor y el límite. Lo dudoso va a una persona.',
@@ -50,6 +57,7 @@ module.exports.ES = {
 };
 
 module.exports.GUARDS = {
+  'appointment-reminders': [L('Two customers picking the same slot never double-book it', 'Dos clientes que eligen el mismo horario nunca lo reservan dos veces'), L('The AI only classifies free text; numbers and opt-outs are read by code', 'La IA solo clasifica texto libre; los números y las bajas los lee el código'), L('A failed reminder is never marked as sent: it retries and fails loudly', 'Un recordatorio fallido nunca se marca como enviado: se reintenta y falla de forma visible'), L('Repeat no-shows go to a person: nothing is blocked or charged automatically', 'Los reincidentes van a una persona: nada se bloquea ni se cobra automáticamente')],
   'crm-sync': [L('The sync never deletes a record', 'La sincronización nunca borra un registro'), L('A cleared field never overwrites the other side', 'Un campo vaciado nunca pisa el otro lado'), L('Two runs cannot collide: a lease lock and one atomic statement', 'Dos ejecuciones no pueden chocar: un candado con caducidad y una sola sentencia atómica'), L('Only new conflicts notify a person', 'Solo los conflictos nuevos avisan a una persona')],
   'lead-revival': [L('Nothing is sent before the owner reviews', 'Nada se envía antes de que el dueño revise'), L('Opt-outs are checked before the AI', 'Las bajas se revisan antes de la IA'), L('Guards are re-evaluated at send time, not trusted from the caller', 'Las reglas se reevalúan al enviar, no se confía en quien llama'), L('Each draft is sent at most once', 'Cada borrador se envía como máximo una vez')],
   'lead-intake': [L('Opt-out and hard rules run before the AI', 'Las bajas y las reglas duras corren antes de la IA'), L('Every step is logged to Postgres', 'Cada paso queda registrado en Postgres'), L('Weekly report numbers are computed, not written by AI', 'Las cifras del reporte semanal se calculan, no las escribe la IA'), L('Failures raise an alert, never silent', 'Los fallos generan una alerta, nunca en silencio')],
@@ -70,7 +78,7 @@ module.exports.PRINCIPLES_ES = [
 module.exports.UI = {
   portfolio: L('Portfolio', 'Portafolio'),
   eyebrow: L('n8n systems', 'Sistemas n8n'),
-  h1: { en: ['Six automations you can actually ', 'audit', '.'], es: ['Seis automatizaciones que puedes ', 'auditar', ' de verdad.'] },
+  h1: { en: ['Seven automations you can actually ', 'audit', '.'], es: ['Siete automatizaciones que puedes ', 'auditar', ' de verdad.'] },
   lead: L('Built in n8n, Postgres and Claude. In each one, code makes the decisions and AI only reads, drafts and summarizes: what a model says is checked against evidence before anything moves.', 'Construidas en n8n, Postgres y Claude. En cada una, el código toma las decisiones y la IA solo lee, redacta y resume: lo que dice un modelo se contrasta con evidencia antes de que algo se mueva.'),
   notice: L('Built and tested end to end with synthetic data in mock mode. Live accounts connect at the edges, and every system page says exactly what is still to wire up.', 'Construido y probado de punta a punta con datos sintéticos en modo simulado. Las cuentas reales se conectan en los bordes, y cada página de sistema dice exactamente qué falta por conectar.'),
   stats: [L('systems, each solving one business problem', 'sistemas, cada uno resuelve un problema de negocio'), L('n8n workflows, with real canvas captures', 'workflows de n8n, con capturas reales del canvas'), L('unit tests passing on the decision logic', 'tests unitarios pasando sobre la lógica de decisión'), L('wrong automatic replies in a 30-ticket synthetic evaluation', 'respuestas automáticas incorrectas en una evaluación sintética de 30 tickets')],
@@ -108,12 +116,12 @@ module.exports.UI = {
   altExec: L('A real n8n execution of {w}', 'Una ejecución real de n8n de {w}'),
   prev: L('Previous', 'Anterior'), next: L('Next', 'Siguiente'),
   footnote: L('Everything on this page was built and tested with synthetic data. None of it is a client result.', 'Todo lo de esta página se construyó y probó con datos sintéticos. Nada de esto es un resultado de cliente.'),
-  catalogCta: L('Browse the 6 n8n systems', 'Explorar los 6 sistemas n8n'),
+  catalogCta: L('Browse the 7 n8n systems', 'Explorar los 7 sistemas n8n'),
   ctaEyebrow: L('Next step', 'Siguiente paso'),
   ctaHeadline: L('Which one fits your problem?', '¿Cuál encaja con tu problema?'),
   ctaText: L('Tell me what is slowing your team down. On a short call we can tell whether one of these systems, or a variant of it, fixes it.', 'Cuéntame qué frena a tu equipo. En una llamada corta vemos si uno de estos sistemas, o una variante, lo resuelve.'),
   ctaButton: L('Schedule a call', 'Agendar una llamada'),
   ctaSecondary: L('Or send a message', 'O envíame un mensaje'),
   metaTitle: L('n8n systems · David Herrera', 'Sistemas n8n · David Herrera'),
-  metaDescription: L('Six auditable automation systems built in n8n, Postgres and Claude, tested end to end with synthetic data.', 'Seis sistemas de automatización auditables construidos en n8n, Postgres y Claude, probados de punta a punta con datos sintéticos.'),
+  metaDescription: L('Seven auditable automation systems built in n8n, Postgres and Claude, tested end to end with synthetic data.', 'Siete sistemas de automatización auditables construidos en n8n, Postgres y Claude, probados de punta a punta con datos sintéticos.'),
 };
