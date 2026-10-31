@@ -55,6 +55,9 @@ WORKFLOWS = [
     ("31-sop-draft-review-publish", "sopdraft0000001", "sop-draft.json", 5),
     ("32-sop-published-page", "sopview00000001", "sop-view.json", 1),
     ("33-sop-review-sweep", "sopsweep0000001", "sop-sweep.json", 3),
+    ("34-pay-invoices-payments", "payledger0000001", "pay-ledger.json", 3),
+    ("35-pay-daily-reminders", "paydunning000001", "pay-dunning.json", 3),
+    ("36-pay-customer-reply", "payreply00000001", "pay-reply.json", 5),
 ]
 
 

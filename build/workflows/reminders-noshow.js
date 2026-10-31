@@ -41,7 +41,8 @@ r AS (
 ),
 c AS (
   INSERT INTO appt_conversation (contact_id, awaiting, appointment_id, offered_slots, offer_slot_id, attempts, updated_at)
-  SELECT x->>'contact_id', 'reminder', x->>'appointment_id', '[]'::jsonb, NULL, 0, now() FROM d, jsonb_array_elements(d.j->'conv') x
+  SELECT DISTINCT ON (x->>'contact_id') x->>'contact_id', 'reminder', x->>'appointment_id', '[]'::jsonb, NULL, 0, now() FROM d, jsonb_array_elements(d.j->'conv') x
+  ORDER BY x->>'contact_id', x->>'appointment_id'
   ON CONFLICT (contact_id) DO UPDATE SET awaiting = 'reminder', appointment_id = EXCLUDED.appointment_id, offered_slots = '[]'::jsonb, offer_slot_id = NULL, attempts = 0, updated_at = now()
   RETURNING contact_id
 ),

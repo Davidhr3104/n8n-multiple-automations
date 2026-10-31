@@ -61,6 +61,13 @@ module.exports.ES = {
     results: ['comprobaciones de punta a punta', 'tests unitarios de la lógica de SOP', 'secretos llegan a la IA o a la base de datos (probado)'],
     live: ['Notion / Google Docs / Confluence no están conectados: en local la wiki es una tabla y una página servida por n8n.', 'Claude no se ha ejecutado en vivo con transcripciones reales, y el audio no se transcribe (el sistema recibe texto).', 'Para confirmar que un procedimiento sigue vigente hay que enviar una versión nueva; aún no existe un botón de “sigue correcto”.'],
   },
+  'payment-reminders': {
+    problem: 'Cobra facturas vencidas con cortesía y detente en cuanto se paguen.',
+    pitch: 'Cada día el sistema revisa las facturas abiertas y envía el recordatorio que toca: amable antes del vencimiento, más firme después, un solo mensaje por cliente. Un pago detiene la secuencia. A los 30 días pasa el caso a una persona. Si el cliente responde, el código lee STOP, la IA solo clasifica la respuesta y nada se bloquea, se cobra ni se reembolsa automáticamente.',
+    flow: [['Registrar facturas y pagos', 'Ambos son idempotentes. El saldo es importe menos pagado, siempre en SQL; dos pagos simultáneos nunca se pierden.'], ['Decidir a quién le toca', 'Solo facturas abiertas, con saldo, sin pausa ni baja, dentro del horario local del cliente. Un mensaje por cliente, solo la etapa más reciente.'], ['Enviar y luego registrar', 'El tono crece con la etapa y nunca amenaza. Una etapa cuenta como enviada solo después de enviarse el correo.'], ['Pasar a una persona a los 30 días', 'La última etapa escribe a una persona, no al cliente.'], ['Leer la respuesta', 'STOP lo lee el código. La IA solo clasifica «ya pagué / disputa / pagaré» con una cita; el código la verifica y decide.']],
+    results: ['comprobaciones de punta a punta', 'tests unitarios de la lógica de pagos', 'facturas marcadas como pagadas por la palabra del cliente (probado)'],
+    live: ['Stripe / contabilidad y SMS o WhatsApp no están conectados: en local el libro es una tabla y los mensajes son correos a un buzón de pruebas.', 'Claude no se ha ejecutado en vivo con respuestas reales.', 'No hay recargos por mora, bloqueo de servicio ni agencias de cobro, por diseño.'],
+  },
   'invoice-processor': {
     problem: 'Contabiliza facturas solo cuando pasan todas las comprobaciones.',
     pitch: 'La IA lee la factura y devuelve cada campo con el texto del que salió. El código verifica la evidencia, la aritmética, las fechas, los duplicados, la cuenta bancaria del proveedor y el límite. Lo dudoso va a una persona.',
@@ -71,6 +78,7 @@ module.exports.ES = {
 };
 
 module.exports.GUARDS = {
+  'payment-reminders': [L('A payment stops the reminders at once', 'Un pago detiene los recordatorios de inmediato'), L('“I already paid” never marks an invoice as paid: a person verifies', '«Ya pagué» nunca marca una factura como pagada: una persona lo verifica'), L('A dispute stops the sequence; nothing is blocked or charged automatically', 'Una disputa detiene la secuencia; nada se bloquea ni se cobra automáticamente'), L('Every message is a fixed template with no threats or late fees', 'Cada mensaje es una plantilla fija sin amenazas ni recargos'), L('Each stage is sent once per invoice, and only counted after the email went out', 'Cada etapa se envía una vez por factura y solo cuenta cuando el correo salió')],
   'sop-generator': [L('Passwords, keys and cards are redacted before the AI and before saving', 'Contraseñas, claves y tarjetas se tapan antes de la IA y antes de guardar'), L('Every step is quoted from the source; steps the AI invented are dropped', 'Cada paso está citado del texto; los pasos que la IA inventó se descartan'), L('Nothing is published without the process owner', 'Nada se publica sin el responsable del proceso'), L('A late approval of an old version never overwrites a newer one', 'Una aprobación tardía de una versión vieja nunca pisa a una más nueva'), L('A draft is never visible on the public page', 'Un borrador nunca se ve en la página pública')],
   'client-onboarding': [L('A template writes the contract, never the AI', 'Una plantilla escribe el contrato, nunca la IA'), L('Anything non-standard needs the account manager before it is sent', 'Todo lo que no es estándar necesita al responsable antes de enviarse'), L('The signature link only shows the contract; signing needs a one-time token', 'El enlace de firma solo muestra el contrato; firmar exige un token de un solo uso'), L('Only requirements quoted from the client’s notes become tasks', 'Solo los requisitos citados de las notas del cliente se vuelven tareas'), L('A failed setup step is visible and signing again resumes it', 'Un paso fallido se ve y volver a firmar lo reanuda')],
   'appointment-reminders': [L('Two customers picking the same slot never double-book it', 'Dos clientes que eligen el mismo horario nunca lo reservan dos veces'), L('The AI only classifies free text; numbers and opt-outs are read by code', 'La IA solo clasifica texto libre; los números y las bajas los lee el código'), L('A failed reminder is never marked as sent: it retries and fails loudly', 'Un recordatorio fallido nunca se marca como enviado: se reintenta y falla de forma visible'), L('Repeat no-shows go to a person: nothing is blocked or charged automatically', 'Los reincidentes van a una persona: nada se bloquea ni se cobra automáticamente')],
@@ -94,7 +102,7 @@ module.exports.PRINCIPLES_ES = [
 module.exports.UI = {
   portfolio: L('Portfolio', 'Portafolio'),
   eyebrow: L('n8n systems', 'Sistemas n8n'),
-  h1: { en: ['Nine automations you can actually ', 'audit', '.'], es: ['Nueve automatizaciones que puedes ', 'auditar', ' de verdad.'] },
+  h1: { en: ['Ten automations you can actually ', 'audit', '.'], es: ['Diez automatizaciones que puedes ', 'auditar', ' de verdad.'] },
   lead: L('Built in n8n, Postgres and Claude. In each one, code makes the decisions and AI only reads, drafts and summarizes: what a model says is checked against evidence before anything moves.', 'Construidas en n8n, Postgres y Claude. En cada una, el código toma las decisiones y la IA solo lee, redacta y resume: lo que dice un modelo se contrasta con evidencia antes de que algo se mueva.'),
   notice: L('Built and tested end to end with synthetic data in mock mode. Live accounts connect at the edges, and every system page says exactly what is still to wire up.', 'Construido y probado de punta a punta con datos sintéticos en modo simulado. Las cuentas reales se conectan en los bordes, y cada página de sistema dice exactamente qué falta por conectar.'),
   stats: [L('systems, each solving one business problem', 'sistemas, cada uno resuelve un problema de negocio'), L('n8n workflows, with real canvas captures', 'workflows de n8n, con capturas reales del canvas'), L('unit tests passing on the decision logic', 'tests unitarios pasando sobre la lógica de decisión'), L('wrong automatic replies in a 30-ticket synthetic evaluation', 'respuestas automáticas incorrectas en una evaluación sintética de 30 tickets')],
@@ -132,12 +140,19 @@ module.exports.UI = {
   altExec: L('A real n8n execution of {w}', 'Una ejecución real de n8n de {w}'),
   prev: L('Previous', 'Anterior'), next: L('Next', 'Siguiente'),
   footnote: L('Everything on this page was built and tested with synthetic data. None of it is a client result.', 'Todo lo de esta página se construyó y probó con datos sintéticos. Nada de esto es un resultado de cliente.'),
-  catalogCta: L('Browse the 9 n8n systems', 'Explorar los 9 sistemas n8n'),
+  catalogCta: L('Browse the 10 n8n systems', 'Explorar los 10 sistemas n8n'),
   ctaEyebrow: L('Next step', 'Siguiente paso'),
   ctaHeadline: L('Which one fits your problem?', '¿Cuál encaja con tu problema?'),
   ctaText: L('Tell me what is slowing your team down. On a short call we can tell whether one of these systems, or a variant of it, fixes it.', 'Cuéntame qué frena a tu equipo. En una llamada corta vemos si uno de estos sistemas, o una variante, lo resuelve.'),
   ctaButton: L('Schedule a call', 'Agendar una llamada'),
   ctaSecondary: L('Or send a message', 'O envíame un mensaje'),
+  topBook: L('Book a call', 'Agendar una llamada'),
+  topEmail: L('Email me', 'Escríbeme'),
+  inboxLabel: L('Inbox & agenda', 'Inbox y agenda'),
+  inboxHeadline: L('Looking for inbox and calendar triage?', '¿Buscas triage de inbox y agenda?'),
+  inboxText: L('Inbox triage for an executive is covered by the CEO Inbox case in the main portfolio: it classifies and prioritizes email and drafts replies for the routine ones. The n8n counterpart for a support inbox is the ticket triage system in this catalog. Calendar triage is not built as an n8n system yet.', 'El triage de inbox para un ejecutivo lo cubre el caso CEO Inbox del portafolio principal: clasifica y prioriza el correo y redacta respuestas para los casos rutinarios. La contraparte en n8n para un inbox de soporte es el sistema de triage de tickets de este catálogo. El triage de agenda todavía no está construido como sistema n8n.'),
+  inboxCaseCta: L('See the CEO Inbox case', 'Ver el caso CEO Inbox'),
+  inboxSystemCta: L('See ticket triage in n8n', 'Ver el triage de tickets en n8n'),
   metaTitle: L('n8n systems · David Herrera', 'Sistemas n8n · David Herrera'),
-  metaDescription: L('Nine auditable automation systems built in n8n, Postgres and Claude, tested end to end with synthetic data.', 'Nueve sistemas de automatización auditables construidos en n8n, Postgres y Claude, probados de punta a punta con datos sintéticos.'),
+  metaDescription: L('Ten auditable automation systems built in n8n, Postgres and Claude, tested end to end with synthetic data.', 'Diez sistemas de automatización auditables construidos en n8n, Postgres y Claude, probados de punta a punta con datos sintéticos.'),
 };

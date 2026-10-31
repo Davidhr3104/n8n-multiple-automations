@@ -700,3 +700,50 @@ CREATE TABLE IF NOT EXISTS sop_events (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS sop_events_sop_idx ON sop_events (sop_id);
+
+-- ───────────── Payment Reminders ─────────────
+-- Mock de contabilidad / pasarela de pago. En live: Stripe / Xero / QuickBooks. Las bajas usan la misma suppression_list.
+CREATE TABLE IF NOT EXISTS pay_invoices (
+  invoice_id    text PRIMARY KEY,
+  customer_id   text        NOT NULL,
+  customer_name text        NOT NULL,
+  contact_email text        NOT NULL,
+  timezone      text,
+  amount        numeric     NOT NULL CHECK (amount > 0),
+  currency      text        NOT NULL,
+  due_date      date        NOT NULL,
+  status        text        NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'paid', 'disputed', 'cancelled')),
+  paid_total    numeric     NOT NULL DEFAULT 0,             -- el saldo es amount - paid_total, siempre desde SQL
+  paused_until  timestamptz,
+  promise_count integer     NOT NULL DEFAULT 0,
+  version       integer     NOT NULL DEFAULT 1,
+  created_at    timestamptz NOT NULL DEFAULT now(),
+  updated_at    timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS pay_invoices_contact_idx ON pay_invoices (lower(contact_email));
+CREATE INDEX IF NOT EXISTS pay_invoices_open_idx ON pay_invoices (due_date) WHERE status = 'open';
+-- Un pago es idempotente por payment_id.
+CREATE TABLE IF NOT EXISTS pay_payments (
+  payment_id text PRIMARY KEY,
+  invoice_id text        NOT NULL,
+  amount     numeric     NOT NULL CHECK (amount > 0),
+  currency   text        NOT NULL,
+  paid_at    timestamptz NOT NULL
+);
+-- Una etapa por factura: una etapa nunca se envía dos veces. 'superseded' = la etapa se saltó porque ya tocaba una más reciente.
+CREATE TABLE IF NOT EXISTS pay_reminders (
+  invoice_id text        NOT NULL,
+  stage      text        NOT NULL,
+  status     text        NOT NULL CHECK (status IN ('sent', 'superseded', 'escalated')),
+  sent_at    timestamptz NOT NULL,
+  PRIMARY KEY (invoice_id, stage)
+);
+CREATE TABLE IF NOT EXISTS pay_events (
+  id         bigserial PRIMARY KEY,
+  invoice_id text NOT NULL,
+  event      text NOT NULL,
+  actor      text NOT NULL,
+  detail     jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS pay_events_invoice_idx ON pay_events (invoice_id);

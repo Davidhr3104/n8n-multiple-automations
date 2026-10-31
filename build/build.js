@@ -41,6 +41,9 @@ const builders = [
   require('./workflows/sop-draft'),
   require('./workflows/sop-view'),
   require('./workflows/sop-sweep'),
+  require('./workflows/pay-ledger'),
+  require('./workflows/pay-dunning'),
+  require('./workflows/pay-reply'),
 ];
 
 fs.mkdirSync(path.join(ROOT, 'workflows'), { recursive: true });

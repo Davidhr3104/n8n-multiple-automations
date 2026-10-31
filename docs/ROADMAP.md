@@ -128,7 +128,9 @@ Une el catálogo del 28-oct con «workflows más pedidos» (116 ofertas, 26–30
 | 5 | Client Onboarding (#7) | 23 | **Hecho (mock)** — 63/63 smoke, 14 tests de lib; firma electrónica, Drive/PM/CRM/Slack reales y Claude en vivo sin verificar |
 | 6 | SOP Generator (#6) | 23 | **Hecho (mock)** — 55/55 smoke, 15 tests de lib; wiki real y Claude en vivo sin verificar |
 | 7 | E-commerce (Order Issue + Review Responder) | 18 | Pendiente (necesita tienda de desarrollo Shopify) |
-| 8–10 | Payment Reminders, WhatsApp Intake, Ads Weekly Report | dentro de #8 / #12 / #3 | Pendiente |
+| 8 | Payment Reminders | dentro de #8 | **Hecho (mock)** — 54/54 smoke, 13 tests de lib; Stripe/contabilidad, SMS reales y Claude en vivo sin verificar |
+| 9–10 | WhatsApp Intake, Ads Weekly Report | dentro de #12 / #3 | Pendiente |
+| — | Inbox & Calendar Triage (EA + AI) | pedido por roles de asistente ejecutivo con IA; hoy solo existe el caso CEO Inbox (Zapier) y el triage de tickets | Candidato: sin construir |
 | 11 | Content Repurposer | 15 | Pendiente (baja prioridad) |
 | 12 | Voice Agent | 10 | Pendiente (no se prueba en local) |
 | — | Listing Inquiry, CV Screener, Intake legal (Clio) | sin respaldo en el PDF | En espera |

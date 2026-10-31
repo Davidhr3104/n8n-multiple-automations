@@ -131,6 +131,22 @@ module.exports.SYSTEMS = [
     live: ['Notion / Google Docs / Confluence are not connected: locally the wiki is a table and a page served by n8n.', 'Claude has not run live on real transcripts, and audio is not transcribed (the system receives text).', 'To confirm a procedure is still valid, send a new version; there is no “still correct” button yet.'],
   },
   {
+    slug: 'payment-reminders', name: 'Payment Reminders',
+    problem: 'Chase overdue invoices politely, and stop the moment they are paid.',
+    pitch: 'Every day the system checks the open invoices and sends the reminder that is due: friendly before the due date, firmer after, one message per customer. A payment stops the sequence. At 30 days it hands the case to a person. If the customer replies, code reads STOP, the AI only classifies the reply, and nothing is blocked, charged or refunded automatically.',
+    workflows: ['34-pay-invoices-payments', '35-pay-daily-reminders', '36-pay-customer-reply'],
+    shots: [['35-pay-daily-reminders', 'canvas', 1], ['36-pay-customer-reply', 'canvas', 2], ['35-pay-daily-reminders', 'execution', 1]],
+    flow: [
+      [['code'], 'Record invoices and payments', 'Both are idempotent. The balance is amount minus paid, always in SQL; two simultaneous payments are never lost.'],
+      [['code'], 'Decide who is due', 'Open invoices only, with a balance, no pause, no opt-out, inside the customer’s local sending hours. One message per customer, latest stage only.'],
+      [['code'], 'Send, then record', 'Tone grows with the stage and never threatens. A stage counts as sent only after the email went out.'],
+      [['code', 'person'], 'Hand off at 30 days', 'The last stage writes to a person, not to the customer.'],
+      [['ai', 'code'], 'Read the reply', 'STOP is read by code. The AI only classifies “already paid / dispute / will pay” with a quote; code verifies it and decides.'],
+    ],
+    results: [['54/54', 'end-to-end checks'], ['13', 'unit tests on the payment logic'], ['0', 'invoices marked paid on the customer’s word (tested)']],
+    live: ['Stripe / accounting and SMS or WhatsApp are not connected: locally the ledger is a table and messages are emails to a test inbox.', 'Claude has not run live on real replies.', 'There are no late fees, service blocks or collection agencies, by design.'],
+  },
+  {
     slug: 'invoice-processor', name: 'Invoice & Document Processor',
     problem: 'Post invoices only when every check passes.',
     pitch: 'AI reads the invoice and returns each field with the text it came from. Code verifies the evidence, the arithmetic, the dates, duplicates, the vendor’s bank account and the limit. Anything doubtful goes to a person.',
@@ -147,6 +163,11 @@ module.exports.SYSTEMS = [
     live: ['Claude PDF/image extraction has not run live; with a file and no text, invoices always go to a person.', 'Accounting (Xero / Sheets) is a mock ledger; the live adapter is not built.', 'Approval is approve / reject: fields cannot be edited yet.'],
   },
 ];
+
+// Orden del catálogo: primero lo que más piden (sincronización de CRM), luego leads dormidos y SMS, y al final soporte y no-shows.
+const ORDER = ['crm-sync', 'lead-revival', 'sms-qualifier', 'lead-intake', 'invoice-processor', 'client-onboarding', 'sop-generator', 'payment-reminders', 'ai-support-ops', 'appointment-reminders'];
+for (const sys of module.exports.SYSTEMS) if (!ORDER.includes(sys.slug)) throw new Error('systems.js: add ' + sys.slug + ' to ORDER');
+module.exports.SYSTEMS.sort((a, b) => ORDER.indexOf(a.slug) - ORDER.indexOf(b.slug));
 
 module.exports.PRINCIPLES = [
   ['A person approves before anything is sent', 'Send-and-wait approvals sit in front of the first message, the draft batch, the invoice. No clear answer means no.', 'user'],
