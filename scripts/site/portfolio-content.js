@@ -1,0 +1,114 @@
+// Contenido bilingüe (EN/ES) que acompaña a scripts/site/systems.js (que ya trae el inglés de problema, pitch, flujo, resultados y pendientes)
+// para la subpágina /n8n del portafolio. Las cifras no se escriben aquí: las lee export-portfolio-data.js de los workflows y los tests.
+const L = (en, es) => ({ en, es });
+
+// slug -> traducción al español de lo que systems.js trae en inglés, y salvaguardas curadas por sistema
+module.exports.ES = {
+  'crm-sync': {
+    problem: 'Tu CRM y tu hoja de cálculo, contando la misma historia.',
+    pitch: 'Dos sistemas editados por personas distintas se fusionan sin pisarse. Los conflictos llegan a una persona con ambos valores lado a lado, y la sincronización nunca borra un registro.',
+    flow: [['Leer ambos lados', 'Contactos del CRM y de la hoja, con el último valor sincronizado de cada campo.'], ['Planear los cambios', 'Fusión a tres vías: solo se mueve lo que cambió en un lado. Un campo vaciado nunca pisa al otro lado.'], ['Aplicar de forma atómica', 'Una sola sentencia o nada. Un candado evita que dos ejecuciones choquen.'], ['Resolver conflictos', 'Una página de revisión muestra ambos valores y una persona elige uno.'], ['Resumen semanal', 'Cifras directas de SQL: creados, actualizados y los que siguen esperando.']],
+    results: ['comprobaciones de punta a punta', 'tests unitarios del planificador de fusión'],
+    live: ['Los adaptadores reales de CRM (GoHighLevel) y Google Sheets aún no están construidos; los adaptadores simulados definen el contrato.', 'Los duplicados se marcan, no se fusionan.'],
+  },
+  'lead-revival': {
+    problem: 'Reactiva leads dormidos sin enviar una sola palabra que no hayas aprobado.',
+    pitch: 'Cada día laborable prepara un borrador personalizado por contacto inactivo. El dueño revisa los borradores reales en una página web y cada envío vuelve a comprobar las reglas en el momento de enviar.',
+    flow: [['Elegir leads dormidos', 'Contactos inactivos que no están en la lista de bajas. Idempotente por día.'], ['Redactar el mensaje', 'La IA solo escribe texto. El código rechaza enlaces y promesas de precio.'], ['El dueño revisa', 'Enviar, editar u omitir cada borrador. Sin una elección clara, no se envía.'], ['Revalidar al enviar', 'Baja, orden de contacto y horario local del contacto.'], ['Gestionar la respuesta', 'Las bajas se detectan antes de cualquier IA; las respuestas se clasifican y se registran.']],
+    results: ['workflows funcionando como un solo sistema'],
+    live: ['El envío por GoHighLevel está construido, pero su contrato no se ha verificado con una cuenta real.'],
+  },
+  'lead-intake': {
+    problem: 'Califica cada lead nuevo en minutos, con una persona aprobando el primer mensaje.',
+    pitch: 'Un lead de formulario se valida, se desduplica, se enriquece y se puntúa con reglas; la IA solo juzga lo que las reglas no pueden. Un vendedor aprueba el primer mensaje por email y un reporte del lunes sale directo de SQL.',
+    flow: [['Validar y desduplicar', 'Un mismo id de lead nunca se ejecuta dos veces.'], ['Puntuar contra tu ICP', 'Reglas determinísticas guardadas en la configuración.'], ['Juzgar los casos límite', 'La IA evalúa lo que las reglas no pueden. Las reglas duras van primero.'], ['El vendedor aprueba', 'Email de enviar-y-esperar: nada llega al lead sin un sí explícito.'], ['CRM + evidencia', 'Contacto creado con la etapa correcta y un archivo JSON de evidencia por lead.']],
+    results: ['workflows (intake + reporte semanal)'],
+    live: ['Las conexiones con Claude y GoHighLevel están definidas, pero sin verificar con cuentas reales.'],
+  },
+  'sms-qualifier': {
+    problem: 'Califica y agenda leads por mensaje de texto, incluso a las 2 a. m.',
+    pitch: 'Una conversación lleva a un lead de “respondió” a “cita agendada” y solo escala a una persona cuando hace falta. El código maneja las bajas antes de que cualquier IA vea el mensaje.',
+    flow: [['Primero, la baja', 'Las palabras tipo STOP las detecta una regla, sin IA.'], ['Decidir el siguiente paso', 'La IA lee la respuesta como dato no confiable y propone preguntar, calificar, descalificar o pasar a una persona.'], ['Validar y filtrar', 'Sin enlaces ni precios, con límite de largo; la confianza baja va a una persona.'], ['Agendar un horario real', 'Ofrece horarios libres del calendario, vincula la respuesta a uno y crea la cita.'], ['Pasar a una persona', 'Una persona recibe la conversación con un borrador cuando el bot no debe continuar.']],
+    results: ['comprobaciones de punta a punta', 'workflows'],
+    live: ['Los contratos de SMS y calendario de GoHighLevel no están verificados con una cuenta real.'],
+  },
+  'ai-support-ops': {
+    problem: 'Nunca incumplas un SLA, y nunca envíes una respuesta que no puedas respaldar.',
+    pitch: 'El código clasifica, prioriza, asigna y pone los tickets en relojes de SLA; la IA lee y redacta. Las respuestas salen solo de tu base de conocimiento, con citas, y un vigilante avisa antes de que se venza un plazo.',
+    flow: [['Reglas duras primero', 'Seguridad, caída de servicio y temas legales fijan un piso de prioridad. El texto que da órdenes a la IA se marca.'], ['Leer el ticket', 'Categoría, urgencia y resumen, cada uno con las palabras exactas en las que se apoyó.'], ['Prioridad, responsable y SLA', 'Se comprueba la evidencia en el texto. Un P1 necesita dos señales independientes. Se asigna por habilidad y carga.'], ['Responder desde tu base de conocimiento', 'Los borradores citan sus fuentes; cada cifra, fecha y enlace debe aparecer en ellas. La duda va a una persona.'], ['Vigilar cada plazo', 'Avisa al 75 % de la ventana, escala al incumplirse y cada alerta se envía una sola vez.']],
+    results: ['respuestas automáticas incorrectas en una evaluación sintética de 30 tickets', 'comprobaciones de punta a punta del triage', 'comprobaciones de punta a punta del agente de respuesta'],
+    footnote: 'La evaluación usa embeddings locales basados en palabras: mide el pipeline y sus salvaguardas, no la precisión de un modelo real.',
+    live: ['Gmail o helpdesk y Slack no están conectados: el payload del webhook es el contrato.', 'Claude y el proveedor de embeddings no se han ejecutado en vivo.', 'Aún no hay pausa del reloj mientras se espera al cliente.'],
+  },
+  'invoice-processor': {
+    problem: 'Contabiliza facturas solo cuando pasan todas las comprobaciones.',
+    pitch: 'La IA lee la factura y devuelve cada campo con el texto del que salió. El código verifica la evidencia, la aritmética, las fechas, los duplicados, la cuenta bancaria del proveedor y el límite. Lo dudoso va a una persona.',
+    flow: [['Reglas duras', 'El texto que intenta aprobar su propia factura se marca y nunca se contabiliza solo.'], ['Leer la factura', 'Cada campo viene con su evidencia y una confianza.'], ['Comprobar todo', 'Evidencia en el documento, aritmética de líneas, fechas, duplicados, cuenta bancaria del proveedor y límite de monto.'], ['Aprobar o rechazar', 'Solo cuando falla una comprobación. Una cuenta bancaria cambiada nunca es automática.'], ['Contabilizar de forma atómica', 'Factura y asiento en una sola sentencia; un índice único impide pagar dos veces.']],
+    results: ['comprobaciones de punta a punta', 'tests unitarios'],
+    live: ['La extracción de PDF/imagen con Claude no se ha ejecutado en vivo; con un archivo sin texto, las facturas siempre van a una persona.', 'La contabilidad (Xero / Sheets) es un libro simulado; el adaptador real no está construido.', 'La aprobación es aprobar / rechazar: aún no se pueden editar los campos.'],
+  },
+};
+
+module.exports.GUARDS = {
+  'crm-sync': [L('The sync never deletes a record', 'La sincronización nunca borra un registro'), L('A cleared field never overwrites the other side', 'Un campo vaciado nunca pisa el otro lado'), L('Two runs cannot collide: a lease lock and one atomic statement', 'Dos ejecuciones no pueden chocar: un candado con caducidad y una sola sentencia atómica'), L('Only new conflicts notify a person', 'Solo los conflictos nuevos avisan a una persona')],
+  'lead-revival': [L('Nothing is sent before the owner reviews', 'Nada se envía antes de que el dueño revise'), L('Opt-outs are checked before the AI', 'Las bajas se revisan antes de la IA'), L('Guards are re-evaluated at send time, not trusted from the caller', 'Las reglas se reevalúan al enviar, no se confía en quien llama'), L('Each draft is sent at most once', 'Cada borrador se envía como máximo una vez')],
+  'lead-intake': [L('Opt-out and hard rules run before the AI', 'Las bajas y las reglas duras corren antes de la IA'), L('Every step is logged to Postgres', 'Cada paso queda registrado en Postgres'), L('Weekly report numbers are computed, not written by AI', 'Las cifras del reporte semanal se calculan, no las escribe la IA'), L('Failures raise an alert, never silent', 'Los fallos generan una alerta, nunca en silencio')],
+  'sms-qualifier': [L('Opt-outs are detected by code with no AI involved', 'Las bajas las detecta el código sin intervención de IA'), L('The lead’s text is treated as untrusted data', 'El texto del lead se trata como dato no confiable'), L('Low confidence hands the conversation to a person', 'La confianza baja pasa la conversación a una persona')],
+  'ai-support-ops': [L('AI alone can never create a P1', 'La IA sola nunca puede crear un P1'), L('A spam verdict never discards a ticket that a hard rule or a known customer contradicts', 'Un veredicto de spam nunca descarta un ticket que contradice una regla dura o un cliente conocido'), L('Each SLA alert is sent once, and only recorded after the email was delivered', 'Cada alerta de SLA se envía una vez y solo se registra tras entregar el email'), L('Replies cite sources: figures, dates and links must appear in them', 'Las respuestas citan fuentes: cifras, fechas y enlaces deben aparecer en ellas')],
+  'invoice-processor': [L('A changed bank account is never automatic', 'Una cuenta bancaria cambiada nunca es automática'), L('Approved but incomplete invoices are not posted and fail loudly', 'Las facturas aprobadas pero incompletas no se contabilizan y fallan de forma visible'), L('A unique index blocks paying the same invoice twice', 'Un índice único impide pagar dos veces la misma factura'), L('Text that tries to approve itself is flagged', 'El texto que intenta aprobarse a sí mismo se marca')],
+};
+
+module.exports.PRINCIPLES_ES = [
+  ['Una persona aprueba antes de enviar', 'Las aprobaciones de enviar-y-esperar van delante del primer mensaje, del lote de borradores y de la factura. Sin una respuesta clara, la respuesta es no.'],
+  ['Cada evento se ejecuta una vez', 'Claves de idempotencia reclamadas de forma atómica en Postgres: un webhook reintentado o un doble clic nunca repite el trabajo.'],
+  ['Las bajas se revisan antes de la IA', 'El código detecta las palabras de baja antes de que cualquier modelo vea el mensaje.'],
+  ['Cada paso queda registrado', 'Una fila por paso en Postgres, para rastrear cualquier decisión hasta lo que el sistema vio.'],
+  ['Las cifras salen de SQL, no de la IA', 'Los reportes y resúmenes se calculan desde las tablas. La IA nunca escribe una cifra.'],
+  ['Los errores se anuncian solos', 'Un manejador global registra y envía por email cada fallo. Nada falla en silencio y un envío fallido se reintenta en la siguiente ejecución.'],
+];
+
+module.exports.UI = {
+  portfolio: L('Portfolio', 'Portafolio'),
+  eyebrow: L('n8n systems', 'Sistemas n8n'),
+  h1: { en: ['Six automations you can actually ', 'audit', '.'], es: ['Seis automatizaciones que puedes ', 'auditar', ' de verdad.'] },
+  lead: L('Built in n8n, Postgres and Claude. In each one, code makes the decisions and AI only reads, drafts and summarizes: what a model says is checked against evidence before anything moves.', 'Construidas en n8n, Postgres y Claude. En cada una, el código toma las decisiones y la IA solo lee, redacta y resume: lo que dice un modelo se contrasta con evidencia antes de que algo se mueva.'),
+  notice: L('Built and tested end to end with synthetic data in mock mode. Live accounts connect at the edges, and every system page says exactly what is still to wire up.', 'Construido y probado de punta a punta con datos sintéticos en modo simulado. Las cuentas reales se conectan en los bordes, y cada página de sistema dice exactamente qué falta por conectar.'),
+  stats: [L('systems, each solving one business problem', 'sistemas, cada uno resuelve un problema de negocio'), L('n8n workflows, with real canvas captures', 'workflows de n8n, con capturas reales del canvas'), L('unit tests passing on the decision logic', 'tests unitarios pasando sobre la lógica de decisión'), L('wrong automatic replies in a 30-ticket synthetic evaluation', 'respuestas automáticas incorrectas en una evaluación sintética de 30 tickets')],
+  chooseLabel: L('Choose by problem', 'Elige por problema'),
+  chooseHeadline: L('What do you need to fix?', '¿Qué necesitas resolver?'),
+  kinds: { code: L('Code decides', 'El código decide'), ai: L('AI reads', 'La IA lee'), person: L('A person', 'Una persona') },
+  legend: { code: L('a rule or calculation decides', 'una regla o cálculo decide'), ai: L('a model reads or drafts, never decides alone', 'un modelo lee o redacta, nunca decide solo'), person: L('a human approves or resolves', 'una persona aprueba o resuelve') },
+  cardCta: L('See how it works', 'Ver cómo funciona'),
+  workflowWord: L('workflow', 'workflow'), workflowsWord: L('workflows', 'workflows'), nodes: L('nodes', 'nodos'),
+  principlesLabel: L('What every system shares', 'Lo que comparten todos'),
+  principlesHeadline: L('Built so that you can trust what it does.', 'Construido para que puedas confiar en lo que hace.'),
+  principlesLead: L('The same six practices run through all of them. They are the reason a system can be left running.', 'Las mismas seis prácticas atraviesan todos. Son la razón por la que un sistema se puede dejar corriendo.'),
+  reliabilityLabel: L('Reliability', 'Fiabilidad'),
+  reliabilityHeadline: L('When something fails, it says so.', 'Cuando algo falla, lo dice.'),
+  reliability: [
+    L('Calls to external APIs retry with exponential backoff and jitter: up to 4 attempts, starting at 2 seconds, doubling, capped at 60 seconds. Client errors that cannot succeed are not retried.', 'Las llamadas a APIs externas se reintentan con backoff exponencial y jitter: hasta 4 intentos, empezando en 2 segundos, duplicando, con tope de 60 segundos. Los errores de cliente que no pueden tener éxito no se reintentan.'),
+    L('Failed sends and alerts are retried on the next run and fail loudly; they are never marked as done.', 'Los envíos y alertas fallidos se reintentan en la siguiente ejecución y fallan de forma visible; nunca se marcan como hechos.'),
+    L('A Global Error Handler workflow receives every failed execution, writes it to Postgres and emails the details.', 'Un workflow Global Error Handler recibe cada ejecución fallida, la guarda en Postgres y envía los detalles por email.'),
+  ],
+  verifiedTitle: L('What is verified', 'Qué está verificado'),
+  verifiedText: L('The retry decision logic is unit-tested, and the failed-send retry was proven end to end (SMTP down, alert not recorded, delivered once after recovery). The backoff loop around real API calls has not run against live services yet.', 'La lógica de decisión de reintentos tiene tests unitarios, y el reintento de envíos fallidos se probó de punta a punta (SMTP caído, alerta sin registrar, entregada una vez tras recuperarse). El bucle de backoff alrededor de llamadas reales a APIs aún no se ha ejecutado contra servicios reales.'),
+  allSystems: L('All systems', 'Todos los sistemas'),
+  howLabel: L('How it works', 'Cómo funciona'),
+  stepsHeadline: L('{n} steps, and who decides each one.', '{n} pasos, y quién decide cada uno.'),
+  insideLabel: L('Inside n8n', 'Dentro de n8n'),
+  safeguards: L('Safeguards', 'Salvaguardas'),
+  stillToWire: L('Still to wire up', 'Falta por conectar'),
+  capturesLabel: L('Real captures', 'Capturas reales'),
+  capturesHeadline: L('The system in n8n.', 'El sistema en n8n.'),
+  capturesLead: L('Screenshots of the actual editor and of a real execution, from the local test environment. Click one to open it full size.', 'Capturas del editor real y de una ejecución real, del entorno de pruebas local. Haz clic en una para abrirla a tamaño completo.'),
+  facts: { nodes: L('nodes', 'nodos'), postgres: L('Postgres', 'Postgres'), code: L('code', 'código'), decisions: L('decisions', 'decisiones'), email: L('email', 'email'), startsFrom: L('Starts from', 'Se inicia desde') },
+  captionCanvas: L('{w} · canvas', '{w} · canvas'),
+  captionExec: L('{w} · a real execution, nodes in green ran', '{w} · una ejecución real, los nodos en verde se ejecutaron'),
+  altCanvas: L('n8n editor canvas of {w}', 'Canvas del editor de n8n de {w}'),
+  altExec: L('A real n8n execution of {w}', 'Una ejecución real de n8n de {w}'),
+  prev: L('Previous', 'Anterior'), next: L('Next', 'Siguiente'),
+  footnote: L('Everything on this page was built and tested with synthetic data. None of it is a client result.', 'Todo lo de esta página se construyó y probó con datos sintéticos. Nada de esto es un resultado de cliente.'),
+  catalogCta: L('Browse the 6 n8n systems', 'Explorar los 6 sistemas n8n'),
+  metaTitle: L('n8n systems · David Herrera', 'Sistemas n8n · David Herrera'),
+  metaDescription: L('Six auditable automation systems built in n8n, Postgres and Claude, tested end to end with synthetic data.', 'Seis sistemas de automatización auditables construidos en n8n, Postgres y Claude, probados de punta a punta con datos sintéticos.'),
+};
