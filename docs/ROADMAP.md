@@ -122,7 +122,7 @@ Une el catálogo del 28-oct con «workflows más pedidos» (116 ofertas, 26–30
 |---|---|---|---|
 | — | Lead Intake, Weekly Report, Revival, Qualifier + Booking, Support Reply Agent | — | Hechos (mock, datos sintéticos) |
 | 1 | **CRM ↔ Sheets Sync** | 50 | **Hecho (mock)** — 40/40 smoke, adaptadores live sin construir |
-| 2 | Invoice & Document Processor (#8 + #13) | 33 | En construcción |
+| 2 | Invoice & Document Processor (#8 + #13) | 33 | **Hecho (mock)** — 34/34 smoke, extracción live y contabilidad live sin verificar |
 | 3 | Email / Ticket Triage (#4) | 24 | Pendiente |
 | 4 | Recordatorios + No-show (#5) | 24 | Pendiente |
 | 5 | Client Onboarding (#7) | 23 | Pendiente |

@@ -41,6 +41,7 @@ WORKFLOWS = [
     ("17-sync-run", "syncrun00000001", "sync-run.json", 4),
     ("18-sync-conflict-review", "syncreview000001", "sync-review.json", 3),
     ("19-sync-weekly-summary", "syncweekly00001", "sync-weekly.json", 1),
+    ("20-invoice-processor", "invoiceintake0001", "invoice-intake.json", 5),
 ]
 
 

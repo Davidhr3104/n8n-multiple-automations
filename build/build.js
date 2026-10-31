@@ -27,6 +27,7 @@ const builders = [
   require('./workflows/sync-run'),
   require('./workflows/sync-review'),
   require('./workflows/sync-weekly'),
+  require('./workflows/invoice-intake'),
 ];
 
 fs.mkdirSync(path.join(ROOT, 'workflows'), { recursive: true });

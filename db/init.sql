@@ -368,3 +368,59 @@ CREATE TABLE IF NOT EXISTS sync_reviews (
 );
 -- Aborta TODA la sentencia (y sus CTE de escritura) con un mensaje claro: así el plan se aplica entero o nada.
 CREATE OR REPLACE FUNCTION sync_abort(msg text) RETURNS integer LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION '%', msg; END $$;
+
+-- ───────────── Invoice & Document Processor ─────────────
+-- Maestro de proveedores (mock). La cuenta bancaria registrada es lo que se compara con la de cada factura.
+CREATE TABLE IF NOT EXISTS invoice_vendors (
+  vendor_key text PRIMARY KEY,           -- nombre normalizado (minúsculas, sin tildes ni signos)
+  name       text NOT NULL,
+  approved   boolean NOT NULL DEFAULT true,
+  bank_last4 text,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS invoices (
+  doc_id           text PRIMARY KEY,
+  filename         text,
+  sender_email     text        NOT NULL,
+  content_hash     text        NOT NULL,
+  vendor_name      text,
+  vendor_key       text,
+  invoice_number   text,
+  invoice_key      text,
+  invoice_date     date,
+  due_date         date,
+  currency         text,
+  subtotal         numeric,
+  tax              numeric,
+  total            numeric,
+  bank_last4       text,
+  line_items       jsonb       NOT NULL DEFAULT '[]'::jsonb,
+  field_confidence jsonb       NOT NULL DEFAULT '{}'::jsonb,
+  evidence         jsonb       NOT NULL DEFAULT '{}'::jsonb,
+  checks           jsonb       NOT NULL DEFAULT '[]'::jsonb,      -- validaciones que fallaron
+  reasons          jsonb       NOT NULL DEFAULT '[]'::jsonb,
+  action           text,                                          -- ignore | duplicate | escalate | review | auto
+  status           text        NOT NULL,                          -- ignored | duplicate | escalated | auto_posted | approved_posted | rejected | no_response | failed
+  confidence       numeric,
+  extraction_model text,
+  execution_id     text,
+  created_at       timestamptz NOT NULL DEFAULT now(),
+  posted_at        timestamptz
+);
+CREATE INDEX IF NOT EXISTS invoices_lookup_idx ON invoices (vendor_key, invoice_key);
+CREATE INDEX IF NOT EXISTS invoices_hash_idx ON invoices (content_hash);
+-- Última red de seguridad contra el doble pago: la misma factura de un proveedor no se contabiliza dos veces ni en una carrera.
+CREATE UNIQUE INDEX IF NOT EXISTS invoices_posted_unique_idx ON invoices (vendor_key, invoice_key) WHERE status IN ('auto_posted', 'approved_posted') AND invoice_key <> '';
+-- "Contabilidad" mock: en local esta tabla hace de Xero / Google Sheets. La integración live NO está construida.
+CREATE TABLE IF NOT EXISTS invoice_ledger (
+  id             bigserial PRIMARY KEY,
+  doc_id         text NOT NULL UNIQUE,
+  vendor_name    text NOT NULL,
+  invoice_number text NOT NULL,
+  invoice_date   date NOT NULL,
+  due_date       date,
+  currency       text NOT NULL,
+  total          numeric NOT NULL,
+  posted_by      text NOT NULL,   -- auto | human
+  posted_at      timestamptz NOT NULL DEFAULT now()
+);
