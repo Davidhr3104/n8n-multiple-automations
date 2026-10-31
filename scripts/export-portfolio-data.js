@@ -34,7 +34,7 @@ const systems = SYSTEMS.map(s => {
     nodes: wfs.reduce((a, x) => a + x.f.nodes, 0),
     workflows: wfs.map(({ w, f }) => ({ name: w[2], nodes: f.nodes, postgres: f.pg, code: f.code, decisions: f.branches, email: f.email, triggers: f.triggers })),
     images: s.shots.map(([slug, kind], i) => ({ file: `${s.slug}-${i + 1}-${kind}.jpg`, kind, workflow: bySlug[slug][2] })),
-    thumb: `${s.slug}-thumb.jpg`,
+    cover: `${s.slug}-cover.jpg`, // generado en el portafolio (scripts/n8n-covers.mjs), no aquí
   };
 });
 
@@ -49,8 +49,9 @@ const data = {
 const jsonPath = path.join(target, 'src', 'data', 'n8n-catalog.json');
 fs.writeFileSync(jsonPath, JSON.stringify(data, null, 2) + '\n');
 const pubDir = path.join(target, 'public', 'n8n');
-fs.rmSync(pubDir, { recursive: true, force: true });
 fs.mkdirSync(pubDir, { recursive: true });
+// Se reemplazan solo las capturas exportadas: las portadas (*-cover.jpg) las genera el portafolio y se conservan.
+for (const f of fs.readdirSync(pubDir)) if (!f.endsWith('-cover.jpg')) fs.rmSync(path.join(pubDir, f));
 let copied = 0;
-for (const s of systems) for (const f of [...s.images.map(i => i.file), s.thumb]) { fs.copyFileSync(path.join(imgDir, f), path.join(pubDir, f)); copied++; }
+for (const s of systems) for (const f of s.images.map(i => i.file)) { fs.copyFileSync(path.join(imgDir, f), path.join(pubDir, f)); copied++; }
 console.log(`exported ${systems.length} systems (${unitTests} unit tests, ${data.stats.workflows} workflows) -> ${path.relative(ROOT, jsonPath)}; ${copied} images -> ${path.relative(ROOT, pubDir)}`);

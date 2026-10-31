@@ -109,6 +109,11 @@ module.exports.UI = {
   prev: L('Previous', 'Anterior'), next: L('Next', 'Siguiente'),
   footnote: L('Everything on this page was built and tested with synthetic data. None of it is a client result.', 'Todo lo de esta página se construyó y probó con datos sintéticos. Nada de esto es un resultado de cliente.'),
   catalogCta: L('Browse the 6 n8n systems', 'Explorar los 6 sistemas n8n'),
+  ctaEyebrow: L('Next step', 'Siguiente paso'),
+  ctaHeadline: L('Which one fits your problem?', '¿Cuál encaja con tu problema?'),
+  ctaText: L('Tell me what is slowing your team down. On a short call we can tell whether one of these systems, or a variant of it, fixes it.', 'Cuéntame qué frena a tu equipo. En una llamada corta vemos si uno de estos sistemas, o una variante, lo resuelve.'),
+  ctaButton: L('Schedule a call', 'Agendar una llamada'),
+  ctaSecondary: L('Or send a message', 'O envíame un mensaje'),
   metaTitle: L('n8n systems · David Herrera', 'Sistemas n8n · David Herrera'),
   metaDescription: L('Six auditable automation systems built in n8n, Postgres and Claude, tested end to end with synthetic data.', 'Seis sistemas de automatización auditables construidos en n8n, Postgres y Claude, probados de punta a punta con datos sintéticos.'),
 };
