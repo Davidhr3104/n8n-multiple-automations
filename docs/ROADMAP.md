@@ -109,6 +109,26 @@ Documento de trabajo con la descripción y la guía de construcción de 18 siste
 Por qué: 8 es una demo muy visual con demanda transversal; 9 y 11 extienden sistemas que ya existen (SMS Qualifier y Support Reply Agent); 10 tiene un dolor fácil de medir; 12 sirve también para el propio negocio.
 
 ### Notas de encaje con este repositorio
-- El PDF no incluye el **CRM ↔ Sheets Sync con dedupe** (plan en `docs/specs/crm-sheets-sync.md`, sin construir) ni los otros pendientes anteriores (legal Clio, e-commerce Shopify). **WhatsApp Intake** sí aparece (#18, sin prioridad numérica).
+- El PDF no incluye el **CRM ↔ Sheets Sync con dedupe** (**construido el 2026-10-30**, mock; ver `docs/specs/crm-sheets-sync.md`) ni los otros pendientes anteriores (legal Clio, e-commerce Shopify). **WhatsApp Intake** sí aparece (#18, sin prioridad numérica).
 - Cada propuesto reutiliza patrones ya construidos: config + modo mock/live, reintentos con backoff, salida validada en código, datos externos como no confiables, bajas sin IA, idempotencia, log por paso y aprobación humana.
 - Los nombres del PDF difieren de los de este repo (por ejemplo, "SMS Qualifier + Booking" = Conversational Qualifier + Booking, #6 arriba).
+
+
+## Roadmap unificado (2026-10-30)
+
+Une el catálogo del 28-oct con «workflows más pedidos» (116 ofertas, 26–30 oct). Demanda = menciones por categoría en el PDF (una oferta puede estar en varias).
+
+| Orden | Sistema | Demanda | Estado |
+|---|---|---|---|
+| — | Lead Intake, Weekly Report, Revival, Qualifier + Booking, Support Reply Agent | — | Hechos (mock, datos sintéticos) |
+| 1 | **CRM ↔ Sheets Sync** | 50 | **Hecho (mock)** — 40/40 smoke, adaptadores live sin construir |
+| 2 | Invoice & Document Processor (#8 + #13) | 33 | En construcción |
+| 3 | Email / Ticket Triage (#4) | 24 | Pendiente |
+| 4 | Recordatorios + No-show (#5) | 24 | Pendiente |
+| 5 | Client Onboarding (#7) | 23 | Pendiente |
+| 6 | SOP Generator (#6) | 23 | Pendiente |
+| 7 | E-commerce (Order Issue + Review Responder) | 18 | Pendiente (necesita tienda de desarrollo Shopify) |
+| 8–10 | Payment Reminders, WhatsApp Intake, Ads Weekly Report | dentro de #8 / #12 / #3 | Pendiente |
+| 11 | Content Repurposer | 15 | Pendiente (baja prioridad) |
+| 12 | Voice Agent | 10 | Pendiente (no se prueba en local) |
+| — | Listing Inquiry, CV Screener, Intake legal (Clio) | sin respaldo en el PDF | En espera |

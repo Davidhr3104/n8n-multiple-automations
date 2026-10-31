@@ -24,6 +24,9 @@ const builders = [
   require('./workflows/qualifier-stale'),
   require('./workflows/support-kb-ingest'),
   require('./workflows/support-ticket'),
+  require('./workflows/sync-run'),
+  require('./workflows/sync-review'),
+  require('./workflows/sync-weekly'),
 ];
 
 fs.mkdirSync(path.join(ROOT, 'workflows'), { recursive: true });

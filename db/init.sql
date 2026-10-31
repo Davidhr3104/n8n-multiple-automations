@@ -280,3 +280,91 @@ CREATE TABLE IF NOT EXISTS support_tickets (
   replied_at    timestamptz
 );
 CREATE INDEX IF NOT EXISTS support_tickets_status_idx ON support_tickets (status, created_at);
+
+-- ───────────── CRM ↔ Sheets Sync ─────────────
+-- Adaptadores MOCK: en local estas dos tablas hacen de CRM y de hoja de cálculo. Los adaptadores live NO existen (SYNC_MODE=live falla ruidosamente).
+-- updated_at = última modificación HECHA POR UNA PERSONA (el sync no la toca): sirve de guarda contra carreras al escribir.
+CREATE TABLE IF NOT EXISTS sync_crm_contacts (
+  id         text PRIMARY KEY,
+  name       text,
+  email      text,
+  phone      text,
+  company    text,
+  stage      text,
+  merged_into text,                         -- marcado como duplicado de otro registro (NUNCA se borra)
+  created_at timestamptz(3) NOT NULL DEFAULT now(),
+  updated_at timestamptz(3) NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS sync_sheet_rows (
+  id         text PRIMARY KEY,
+  name       text,
+  email      text,
+  phone      text,
+  company    text,
+  stage      text,
+  duplicate_of text,
+  created_at timestamptz(3) NOT NULL DEFAULT now(),
+  updated_at timestamptz(3) NOT NULL DEFAULT now()
+);
+-- Vínculo CRM <-> fila. `base` = último valor sincronizado por campo (forma canónica): permite la fusión de tres vías.
+CREATE TABLE IF NOT EXISTS sync_links (
+  link_id    bigserial PRIMARY KEY,
+  crm_id     text NOT NULL UNIQUE,
+  sheet_id   text NOT NULL UNIQUE,
+  base       jsonb NOT NULL DEFAULT '{}'::jsonb,
+  how        text,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+-- Conflicto = los dos lados cambiaron el mismo campo a valores distintos. No se toca ninguno hasta que una persona decide.
+CREATE TABLE IF NOT EXISTS sync_conflicts (
+  id               bigserial PRIMARY KEY,
+  crm_id           text NOT NULL,
+  sheet_id         text NOT NULL,
+  field            text NOT NULL,
+  crm_value        text,
+  sheet_value      text,
+  base_value       text,
+  crm_updated_at   timestamptz(3),
+  sheet_updated_at timestamptz(3),
+  status           text NOT NULL DEFAULT 'open',   -- open | resolved | resolved_auto (los valores convergieron solos)
+  resolution       text,                           -- crm | sheet
+  run_id           text,
+  first_seen       timestamptz NOT NULL DEFAULT now(),
+  last_seen        timestamptz NOT NULL DEFAULT now(),
+  resolved_at      timestamptz
+);
+CREATE UNIQUE INDEX IF NOT EXISTS sync_conflicts_open_uidx ON sync_conflicts (crm_id, sheet_id, field) WHERE status = 'open';
+-- Incidencias que requieren ojos humanos (inválidos, posibles duplicados, vínculos huérfanos, campos vaciados). La clave evita avisar dos veces.
+CREATE TABLE IF NOT EXISTS sync_issues (
+  key         text PRIMARY KEY,
+  kind        text NOT NULL,
+  detail      jsonb NOT NULL DEFAULT '{}'::jsonb,
+  run_id      text,
+  first_seen  timestamptz NOT NULL DEFAULT now(),
+  last_seen   timestamptz NOT NULL DEFAULT now(),
+  resolved_at timestamptz
+);
+-- Historial de cada cambio hecho por el sync (qué, dónde, antes y después).
+CREATE TABLE IF NOT EXISTS sync_changes (
+  id         bigserial PRIMARY KEY,
+  run_id     text NOT NULL,
+  side       text NOT NULL,
+  action     text NOT NULL,       -- create | update | mark_duplicate | resolve_conflict
+  entity_id  text NOT NULL,
+  field      text,
+  old_value  text,
+  new_value  text,
+  source_id  text,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS sync_changes_run_idx ON sync_changes (run_id);
+-- Link de revisión de conflictos (token + vencimiento).
+CREATE TABLE IF NOT EXISTS sync_reviews (
+  review_id  text PRIMARY KEY,
+  token      text NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  expires_at timestamptz NOT NULL
+);
+-- Aborta TODA la sentencia (y sus CTE de escritura) con un mensaje claro: así el plan se aplica entero o nada.
+CREATE OR REPLACE FUNCTION sync_abort(msg text) RETURNS integer LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION '%', msg; END $$;

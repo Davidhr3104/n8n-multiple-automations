@@ -1,0 +1,1067 @@
+{
+  "id": "syncrun00000001",
+  "name": "Sync · CRM ↔ Sheets Run (Auditable)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "*/15 * * * *"
+            }
+          ]
+        }
+      },
+      "id": "00000000-0000-4000-8000-000000000854",
+      "name": "Schedule 15 min",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        100
+      ],
+      "notes": "Cada 15 minutos. Sin clave de idempotencia por ventana: el plan converge (una segunda corrida sin cambios no escribe nada) y el bloqueo evita corridas solapadas."
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "sync-run",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "00000000-0000-4000-8000-000000000856",
+      "name": "Manual Trigger (webhook)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        320
+      ],
+      "webhookId": "00000000-0000-4000-8000-000000000855",
+      "notes": "Para demos y pruebas: POST /webhook/sync-run con la cabecera x-sync-token. Devuelve el resultado de la corrida."
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "{\n  \"config\": {\n    \"mode\": \"mock\",\n    \"defaultCountry\": \"57\",\n    \"nameThreshold\": 0.5,\n    \"lockSeconds\": 300,\n    \"internalToken\": \"local-dev-token\",\n    \"reviewUrl\": \"http://localhost:5678/webhook/sync-review\",\n    \"reviewSubmitUrl\": \"/webhook/sync-review-submit\",\n    \"ownerEmail\": \"ops-lead@example.com\",\n    \"fromEmail\": \"sync@demo.example\",\n    \"dataLabel\": \"TEST DATA · synthetic contacts (mock CRM and sheet)\"\n  }\n}",
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "00000000-0000-4000-8000-000000000857",
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        240,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const item = $input.item.json;\nconst c = item.config;\nconst isWebhook = item.headers !== undefined;\nconst errors = [];\nif (isWebhook && item.headers['x-sync-token'] !== c.internalToken) errors.push('bad_token');\nreturn { json: { config: c, run_id: String($execution.id), trigger: isWebhook ? 'webhook' : 'schedule', validation: { ok: errors.length === 0, errors } } };"
+      },
+      "id": "00000000-0000-4000-8000-000000000858",
+      "name": "Prepare Run",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "00000000-0000-4000-8000-000000000859",
+              "leftValue": "={{ $json.validation.ok }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "00000000-0000-4000-8000-000000000860",
+      "name": "Valid Request?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        720,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "return { json: { status: 'rejected', errors: $input.item.json.validation.errors } };"
+      },
+      "id": "00000000-0000-4000-8000-000000000861",
+      "name": "Rejected",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        960,
+        600
+      ],
+      "notes": "Token inválido: no se lee ni se escribe nada."
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO idempotency_keys (key, workflow, execution_id, status) VALUES ('sync-lock', 'sync-run', $1, 'processing')\nON CONFLICT (key) DO UPDATE SET execution_id = EXCLUDED.execution_id, status = 'processing', claimed_at = now(), finished_at = NULL, attempts = idempotency_keys.attempts + 1\nWHERE idempotency_keys.status <> 'processing' OR idempotency_keys.claimed_at < now() - make_interval(secs => $2::int)\nRETURNING key",
+        "options": {
+          "queryReplacement": "={{ [$json.run_id, $json.config.lockSeconds] }}"
+        }
+      },
+      "id": "00000000-0000-4000-8000-000000000862",
+      "name": "Acquire Lock",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        960,
+        200
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "postgresLocal01",
+          "name": "Postgres local (automations)"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000,
+      "alwaysOutputData": true,
+      "notes": "Bloqueo atómico (PRIMARY KEY) con vencimiento: si una corrida muere, el bloqueo se libera solo. Sin fila de vuelta = ya hay una corrida en curso."
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const s = $('Prepare Run').item.json;\nconst row = $input.item.json.key ? $input.item.json : null;\nreturn { json: { ...s, lock: { acquired: row !== null } } };"
+      },
+      "id": "00000000-0000-4000-8000-000000000863",
+      "name": "Lock Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1200,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "00000000-0000-4000-8000-000000000864",
+              "leftValue": "={{ $json.lock.acquired }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "00000000-0000-4000-8000-000000000865",
+      "name": "Locked?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1440,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "return { json: { status: 'busy', run_id: $input.item.json.run_id, message: 'Another sync run is in progress; this one did nothing.' } };"
+      },
+      "id": "00000000-0000-4000-8000-000000000866",
+      "name": "Busy",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1680,
+        600
+      ],
+      "notes": "No es un error: la corrida en curso ya hará el trabajo."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "00000000-0000-4000-8000-000000000867",
+              "leftValue": "={{ $json.config.mode }}",
+              "rightValue": "live",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "00000000-0000-4000-8000-000000000868",
+      "name": "Live Mode?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1680,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE idempotency_keys SET status = 'done', finished_at = now() WHERE key = 'sync-lock' AND execution_id = $1",
+        "options": {
+          "queryReplacement": "={{ [$json.run_id] }}"
+        }
+      },
+      "id": "00000000-0000-4000-8000-000000000869",
+      "name": "Release Lock (live)",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1920,
+        560
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "postgresLocal01",
+          "name": "Postgres local (automations)"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "throw new Error('SYNC_MODE=live is not built: the live CRM (GoHighLevel) and Google Sheets adapters do not exist yet. Refusing to fall back to the mock adapters silently.');"
+      },
+      "id": "00000000-0000-4000-8000-000000000870",
+      "name": "Live Not Built",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2160,
+        560
+      ],
+      "notes": "Frontera del adaptador: aquí irían las lecturas/escrituras reales. Hasta que existan, el flujo se niega a correr."
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT\n  (SELECT COALESCE(jsonb_agg(to_jsonb(c) ORDER BY c.id), '[]'::jsonb) FROM (SELECT id, name, email, phone, company, stage, updated_at FROM sync_crm_contacts WHERE merged_into IS NULL) c) AS crm,\n  (SELECT COALESCE(jsonb_agg(to_jsonb(s) ORDER BY s.id), '[]'::jsonb) FROM (SELECT id, name, email, phone, company, stage, updated_at FROM sync_sheet_rows WHERE duplicate_of IS NULL) s) AS sheet,\n  (SELECT COALESCE(jsonb_agg(to_jsonb(l) ORDER BY l.link_id), '[]'::jsonb) FROM (SELECT link_id, crm_id, sheet_id, base FROM sync_links) l) AS links",
+        "options": {}
+      },
+      "id": "00000000-0000-4000-8000-000000000871",
+      "name": "Read Both Sides (mock adapter)",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1920,
+        100
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "postgresLocal01",
+          "name": "Postgres local (automations)"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000,
+      "notes": "ADAPTADOR MOCK: lee CRM y hoja desde Postgres (sin duplicados ya marcados). En live serían GHL y Google Sheets."
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const { planSync } = (() => {\n  const module = { exports: {} };\n// CRM ↔ Sheets Sync: lógica 100 % determinística (sin IA). Planifica; no escribe nada.\r\n// Reglas: nunca se borra ni se propaga un borrado; un cambio en un solo lado se copia; un cambio distinto en los DOS lados es un\r\n// conflicto y no se toca ninguno; los casos dudosos (mismo teléfono, nombres distintos) se reportan y NO se fusionan.\r\nconst FIELDS = ['name', 'email', 'phone', 'company', 'stage'];\r\n\r\nconst fold = s => String(s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\\s+/g, ' ').trim();\r\n\r\nfunction normEmail(v) {\r\n  const e = String(v ?? '').trim().toLowerCase();\r\n  return /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(e) ? e : '';\r\n}\r\n\r\n// Misma regla que norm_phone() en SQL: menos de 8 dígitos = no es un teléfono.\r\nfunction normPhone(v, cc = '57') {\r\n  const s = String(v ?? '').trim();\r\n  const d = s.replace(/[^0-9]/g, '');\r\n  if (d.length < 8) return '';\r\n  if (s.startsWith('+') || d.length >= 11) return '+' + d;\r\n  return '+' + cc + d;\r\n}\r\n\r\n// Similitud de nombres: Jaccard de palabras, ignorando mayúsculas y tildes. Vacío = 0.\r\nfunction nameSimilarity(a, b) {\r\n  const ta = new Set(fold(a).split(' ').filter(Boolean));\r\n  const tb = new Set(fold(b).split(' ').filter(Boolean));\r\n  if (!ta.size || !tb.size) return 0;\r\n  let inter = 0;\r\n  for (const t of ta) if (tb.has(t)) inter++;\r\n  return inter / (ta.size + tb.size - inter);\r\n}\r\n\r\n// Forma canónica para COMPARAR (nunca para mostrar): evita falsos conflictos por mayúsculas, espacios o formato de teléfono.\r\nconst canon = (field, v, cc) => field === 'email' ? normEmail(v) : field === 'phone' ? normPhone(v, cc) : fold(v);\r\n// Forma para ESCRIBIR en el otro sistema.\r\nconst outValue = (field, v, cc) => field === 'email' ? normEmail(v) : field === 'phone' ? normPhone(v, cc) : String(v ?? '').replace(/\\s+/g, ' ').trim();\r\n\r\nconst createdId = (side, fromId) => (side === 'crm' ? 'crm-from-' : 'row-from-') + fromId;\r\n\r\nfunction planSync({ crm = [], sheet = [], links = [], defaultCountry = '57', nameThreshold = 0.5 } = {}) {\r\n  const cc = defaultCountry;\r\n  const plan = {\r\n    creates: { crm: [], sheet: [] },\r\n    updates: { crm: [], sheet: [] },\r\n    new_links: [],\r\n    base_updates: [],\r\n    duplicates: [],\r\n    conflicts: [],\r\n    issues: [],\r\n    changes: [],\r\n    stats: {},\r\n  };\r\n  const seenKeys = new Set();\r\n  // Una incidencia por clave: la misma pareja puede detectarse desde ambos lados.\r\n  const issue = (kind, key, detail) => { if (seenKeys.has(key)) return; seenKeys.add(key); plan.issues.push({ kind, key, detail }); };\r\n  const keyOf = (...p) => p.join(':');\r\n  const pairKey = (kind, side, a, b) => keyOf(kind, side, ...[a, b].sort());\r\n\r\n  const prep = (side, rows) => {\r\n    const ok = [];\r\n    for (const r of [...rows].sort((a, b) => String(a.id).localeCompare(String(b.id)))) {\r\n      const n = { ...r, id: String(r.id), _email: normEmail(r.email), _phone: normPhone(r.phone, cc) };\r\n      if (!n._email && !n._phone) { issue('invalid_record', keyOf('invalid', side, n.id), { side, id: n.id, reason: 'no_valid_email_or_phone' }); continue; }\r\n      ok.push(n);\r\n    }\r\n    return ok;\r\n  };\r\n\r\n  const linkedCrm = new Set(links.map(l => String(l.crm_id)));\r\n  const linkedSheet = new Set(links.map(l => String(l.sheet_id)));\r\n\r\n  // ── 1) Duplicados dentro de un mismo lado ──\r\n  const dedupe = (side, rows, linkedSet) => {\r\n    const parent = new Map(rows.map(r => [r.id, r.id]));\r\n    const find = x => { while (parent.get(x) !== x) { parent.set(x, parent.get(parent.get(x))); x = parent.get(x); } return x; };\r\n    const union = (a, b) => { const ra = find(a), rb = find(b); if (ra !== rb) parent.set(rb, ra); };\r\n    const reason = new Map();\r\n    for (let i = 0; i < rows.length; i++) for (let j = i + 1; j < rows.length; j++) {\r\n      const a = rows[i], b = rows[j];\r\n      if (a._email && a._email === b._email) { union(a.id, b.id); reason.set(b.id, 'same_email'); }\r\n      else if (a._phone && a._phone === b._phone) {\r\n        if (nameSimilarity(a.name, b.name) >= nameThreshold) { union(a.id, b.id); reason.set(b.id, 'same_phone_similar_name'); }\r\n        else issue('possible_duplicate', pairKey('dup', side, a.id, b.id), { side, ids: [a.id, b.id], reason: 'same_phone_different_name' });\r\n      }\r\n    }\r\n    const groups = new Map();\r\n    for (const r of rows) { const g = find(r.id); groups.set(g, [...(groups.get(g) || []), r]); }\r\n    const active = [];\r\n    for (const members of groups.values()) {\r\n      if (members.length === 1) { active.push(members[0]); continue; }\r\n      const linked = members.filter(m => linkedSet.has(m.id));\r\n      if (linked.length > 1) {\r\n        issue('possible_duplicate', keyOf('dup-linked', side, ...members.map(m => m.id).sort()), { side, ids: members.map(m => m.id), reason: 'several_linked_records' });\r\n        active.push(...members);\r\n        continue;\r\n      }\r\n      const canonical = linked[0] || members[0];\r\n      active.push(canonical);\r\n      for (const m of members) if (m !== canonical) plan.duplicates.push({ side, id: m.id, canonical: canonical.id, reason: reason.get(m.id) || 'same_email' });\r\n    }\r\n    return active;\r\n  };\r\n\r\n  const crmA = dedupe('crm', prep('crm', crm), linkedCrm);\r\n  const sheetA = dedupe('sheet', prep('sheet', sheet), linkedSheet);\r\n  const crmById = new Map(crmA.map(r => [r.id, r]));\r\n  const sheetById = new Map(sheetA.map(r => [r.id, r]));\r\n\r\n  // ── 2) Pares ya vinculados: fusión de tres vías contra el último valor sincronizado ──\r\n  const mergePair = (c, s, base, upd, linkRef) => {\r\n    const newBase = { ...base };\r\n    const toSheet = {}, toCrm = {};\r\n    for (const f of FIELDS) {\r\n      const cv = canon(f, c[f], cc), sv = canon(f, s[f], cc), bv = base[f] ?? '';\r\n      if (cv === sv) { newBase[f] = cv; continue; }\r\n      const crmChanged = cv !== bv, sheetChanged = sv !== bv;\r\n      if (crmChanged && sheetChanged) {\r\n        plan.conflicts.push({ crm_id: c.id, sheet_id: s.id, field: f, crm_value: String(c[f] ?? ''), sheet_value: String(s[f] ?? ''), base_value: bv, crm_updated_at: c.updated_at ?? null, sheet_updated_at: s.updated_at ?? null });\r\n      } else if (crmChanged) {\r\n        if (cv === '') issue('blank_ignored', keyOf('blank', linkRef, f, 'crm'), { field: f, crm_id: c.id, sheet_id: s.id, side: 'crm' });\r\n        else { toSheet[f] = outValue(f, c[f], cc); newBase[f] = cv; }\r\n      } else if (sheetChanged) {\r\n        if (sv === '') issue('blank_ignored', keyOf('blank', linkRef, f, 'sheet'), { field: f, crm_id: c.id, sheet_id: s.id, side: 'sheet' });\r\n        else { toCrm[f] = outValue(f, s[f], cc); newBase[f] = sv; }\r\n      }\r\n    }\r\n    if (Object.keys(toSheet).length) {\r\n      plan.updates.sheet.push({ id: s.id, fields: toSheet, expected_updated_at: s.updated_at ?? null });\r\n      for (const [f, v] of Object.entries(toSheet)) plan.changes.push({ side: 'sheet', action: 'update', entity_id: s.id, field: f, old_value: String(s[f] ?? ''), new_value: v, source_id: c.id });\r\n    }\r\n    if (Object.keys(toCrm).length) {\r\n      plan.updates.crm.push({ id: c.id, fields: toCrm, expected_updated_at: c.updated_at ?? null });\r\n      for (const [f, v] of Object.entries(toCrm)) plan.changes.push({ side: 'crm', action: 'update', entity_id: c.id, field: f, old_value: String(c[f] ?? ''), new_value: v, source_id: s.id });\r\n    }\r\n    return newBase;\r\n  };\r\n\r\n  for (const l of [...links].sort((a, b) => Number(a.link_id) - Number(b.link_id))) {\r\n    const c = crmById.get(String(l.crm_id)), s = sheetById.get(String(l.sheet_id));\r\n    if (!c || !s) { issue('orphan_link', keyOf('orphan', l.link_id), { link_id: l.link_id, crm_id: l.crm_id, sheet_id: l.sheet_id, missing: !c && !s ? 'both' : !c ? 'crm' : 'sheet' }); continue; }\r\n    const base = l.base || {};\r\n    const newBase = mergePair(c, s, base, null, String(l.link_id));\r\n    if (FIELDS.some(f => (newBase[f] ?? '') !== (base[f] ?? ''))) plan.base_updates.push({ link_id: l.link_id, base: newBase });\r\n  }\r\n\r\n  // ── 3) Registros sin vínculo: emparejar, retener o crear ──\r\n  const freeCrm = crmA.filter(r => !linkedCrm.has(r.id));\r\n  const freeSheet = sheetA.filter(r => !linkedSheet.has(r.id));\r\n  const taken = new Set();\r\n  const pairs = [];\r\n  for (const c of freeCrm) {\r\n    let m = c._email ? freeSheet.find(s => !taken.has(s.id) && s._email === c._email) : null;\r\n    if (!m && c._phone) m = freeSheet.find(s => !taken.has(s.id) && s._phone === c._phone && nameSimilarity(c.name, s.name) >= nameThreshold);\r\n    if (m) { taken.add(m.id); pairs.push([c, m]); }\r\n  }\r\n  const pairedCrm = new Set(pairs.map(p => p[0].id));\r\n  for (const [c, s] of pairs) {\r\n    const base = {};\r\n    for (const f of FIELDS) { const cv = canon(f, c[f], cc), sv = canon(f, s[f], cc); base[f] = cv === sv ? cv : ''; }\r\n    const nb = mergePair(c, s, base, null, `new:${c.id}:${s.id}`);\r\n    plan.new_links.push({ crm_id: c.id, sheet_id: s.id, base: nb, how: c._email && c._email === s._email ? 'email' : 'phone_and_name' });\r\n  }\r\n\r\n  const heldCrm = new Set(), heldSheet = new Set();\r\n  const hold = (c, s, reason) => { heldCrm.add(c.id); heldSheet.add(s.id); issue('possible_duplicate', pairKey('dup-x', 'crm-sheet', c.id, s.id), { crm_id: c.id, sheet_id: s.id, reason }); };\r\n  const looksSame = (a, b) => (a._email && a._email === b._email) || (a._phone && a._phone === b._phone);\r\n  for (const c of freeCrm) {\r\n    if (pairedCrm.has(c.id)) continue;\r\n    for (const s of sheetA) if (looksSame(c, s)) hold(c, s, c._email && c._email === s._email ? 'same_email_other_record_linked' : 'same_phone_different_name');\r\n  }\r\n  for (const s of freeSheet) {\r\n    if (taken.has(s.id)) continue;\r\n    for (const c of crmA) if (looksSame(c, s)) hold(c, s, c._email && c._email === s._email ? 'same_email_other_record_linked' : 'same_phone_different_name');\r\n  }\r\n\r\n  const fieldsOf = r => Object.fromEntries(FIELDS.map(f => [f, outValue(f, r[f], cc)]));\r\n  const baseOf = r => Object.fromEntries(FIELDS.map(f => [f, canon(f, r[f], cc)]));\r\n  for (const c of freeCrm) if (!pairedCrm.has(c.id) && !heldCrm.has(c.id)) {\r\n    plan.creates.sheet.push({ new_id: createdId('sheet', c.id), from_id: c.id, fields: fieldsOf(c), base: baseOf(c) });\r\n    plan.new_links.push({ crm_id: c.id, sheet_id: createdId('sheet', c.id), base: baseOf(c), how: 'created_in_sheet' });\r\n  }\r\n  for (const s of freeSheet) if (!taken.has(s.id) && !heldSheet.has(s.id)) {\r\n    plan.creates.crm.push({ new_id: createdId('crm', s.id), from_id: s.id, fields: fieldsOf(s), base: baseOf(s) });\r\n    plan.new_links.push({ crm_id: createdId('crm', s.id), sheet_id: s.id, base: baseOf(s), how: 'created_in_crm' });\r\n  }\r\n\r\n  for (const c of plan.creates.sheet) plan.changes.push({ side: 'sheet', action: 'create', entity_id: c.new_id, field: null, old_value: null, new_value: JSON.stringify(c.fields), source_id: c.from_id });\r\n  for (const c of plan.creates.crm) plan.changes.push({ side: 'crm', action: 'create', entity_id: c.new_id, field: null, old_value: null, new_value: JSON.stringify(c.fields), source_id: c.from_id });\r\n  for (const d of plan.duplicates) plan.changes.push({ side: d.side, action: 'mark_duplicate', entity_id: d.id, field: 'merged_into', old_value: null, new_value: d.canonical, source_id: d.reason });\r\n\r\n  const n = k => plan.issues.filter(i => i.kind === k).length;\r\n  plan.stats = {\r\n    crm_records: crmA.length, sheet_records: sheetA.length, links: links.length,\r\n    created_in_crm: plan.creates.crm.length, created_in_sheet: plan.creates.sheet.length,\r\n    updated_in_crm: plan.updates.crm.length, updated_in_sheet: plan.updates.sheet.length,\r\n    new_links: plan.new_links.length, duplicates_marked: plan.duplicates.length, conflicts: plan.conflicts.length,\r\n    invalid: n('invalid_record'), possible_duplicates: n('possible_duplicate'), orphan_links: n('orphan_link'), blank_ignored: n('blank_ignored'),\r\n  };\r\n  plan.writes = plan.stats.created_in_crm + plan.stats.created_in_sheet + plan.stats.updated_in_crm + plan.stats.updated_in_sheet + plan.base_updates.length + plan.duplicates.length;\r\n  return plan;\r\n}\r\n\r\n// Qué hacer con un conflicto según la decisión de la persona. 'pending' (o cualquier otra cosa) no toca nada: falla cerrado.\r\nfunction resolveChoice(conflict, choice) {\r\n  if (choice === 'crm') return { action: 'copy', write_to: 'sheet', value: outValue(conflict.field, conflict.crm_value), base: canon(conflict.field, conflict.crm_value) };\r\n  if (choice === 'sheet') return { action: 'copy', write_to: 'crm', value: outValue(conflict.field, conflict.sheet_value), base: canon(conflict.field, conflict.sheet_value) };\r\n  return { action: 'none' };\r\n}\r\n\r\nconst FIELD_LABEL = { name: 'Name', email: 'Email', phone: 'Phone', company: 'Company', stage: 'Stage' };\r\nconst KIND_LABEL = { invalid_record: 'Invalid record (no valid email or phone)', possible_duplicate: 'Possible duplicate (not merged)', orphan_link: 'Linked record missing on one side (nothing deleted)', blank_ignored: 'Field cleared on one side (not copied)' };\r\n\r\nfunction describeIssue(i) {\r\n  const d = i.detail || {};\r\n  if (i.kind === 'invalid_record') return `${d.side} ${d.id}: ${d.reason}`;\r\n  if (i.kind === 'possible_duplicate') return d.side ? `${d.side} ${d.ids.join(' & ')}: ${d.reason}` : `crm ${d.crm_id} & sheet ${d.sheet_id}: ${d.reason}`;\r\n  if (i.kind === 'orphan_link') return `link ${d.link_id}: missing on ${d.missing} (crm ${d.crm_id}, sheet ${d.sheet_id})`;\r\n  return `${d.field} cleared on ${d.side} (crm ${d.crm_id}, sheet ${d.sheet_id})`;\r\n}\r\n\r\n// Email de aviso: solo lo NUEVO (incidencias y conflictos recién vistos). Texto plano + HTML escapado.\r\nfunction buildNotice({ stats, newIssues = [], newConflicts = [], reviewLink = null, dataLabel = '' }) {\r\n  const esc = v => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\r\n  const lines = [dataLabel, '', `Sync run: ${stats.created_in_crm + stats.created_in_sheet} created, ${stats.updated_in_crm + stats.updated_in_sheet} updated, ${stats.duplicates_marked} duplicate(s) marked.`, ''];\r\n  if (newConflicts.length) {\r\n    lines.push(`${newConflicts.length} new conflict(s) - both systems changed the same field; nothing was overwritten:`);\r\n    for (const c of newConflicts.slice(0, 20)) lines.push(`  - ${FIELD_LABEL[c.field] || c.field} (crm ${c.crm_id} / sheet ${c.sheet_id}): CRM \"${c.crm_value}\" vs Sheet \"${c.sheet_value}\"`);\r\n    if (reviewLink) lines.push('', `Resolve them here: ${reviewLink}`);\r\n    lines.push('');\r\n  }\r\n  if (newIssues.length) {\r\n    lines.push(`${newIssues.length} new item(s) need a look:`);\r\n    for (const i of newIssues.slice(0, 20)) lines.push(`  - ${KIND_LABEL[i.kind] || i.kind}: ${describeIssue(i)}`);\r\n    lines.push('');\r\n  }\r\n  const html = `<p>${esc(dataLabel)}</p><p>Sync run: <b>${stats.created_in_crm + stats.created_in_sheet}</b> created, <b>${stats.updated_in_crm + stats.updated_in_sheet}</b> updated, <b>${stats.duplicates_marked}</b> duplicate(s) marked.</p>`\r\n    + (newConflicts.length ? `<p><b>${newConflicts.length}</b> new conflict(s): both systems changed the same field and nothing was overwritten.</p><ul>${newConflicts.slice(0, 20).map(c => `<li>${esc(FIELD_LABEL[c.field] || c.field)}: CRM \"${esc(c.crm_value)}\" vs Sheet \"${esc(c.sheet_value)}\"</li>`).join('')}</ul>${reviewLink ? `<p><a href=\"${esc(reviewLink)}\" style=\"display:inline-block;padding:12px 22px;background:#1e40af;color:#ffffff;border-radius:8px;text-decoration:none;font-weight:700\">Resolve conflicts</a></p>` : ''}` : '')\r\n    + (newIssues.length ? `<p><b>${newIssues.length}</b> new item(s) need a look:</p><ul>${newIssues.slice(0, 20).map(i => `<li>${esc(KIND_LABEL[i.kind] || i.kind)}: ${esc(describeIssue(i))}</li>`).join('')}</ul>` : '');\r\n  return { text: lines.join('\\n'), html };\r\n}\r\n\r\nmodule.exports = { FIELDS, FIELD_LABEL, normEmail, normPhone, nameSimilarity, canon, outValue, createdId, planSync, resolveChoice, buildNotice, describeIssue };\r\n\n  return module.exports;\n})();\n\nconst s = $('Lock Result').item.json;\nconst r = $input.item.json;\nconst plan = planSync({ crm: r.crm, sheet: r.sheet, links: r.links, defaultCountry: s.config.defaultCountry, nameThreshold: s.config.nameThreshold });\nreturn { json: { ...s, plan } };"
+      },
+      "id": "00000000-0000-4000-8000-000000000872",
+      "name": "Build Plan",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2160,
+        100
+      ],
+      "notes": "DETERMINÍSTICO, sin IA y sin escribir: normaliza, detecta duplicados, vincula, hace la fusión de tres vías y devuelve el plan completo (más conflictos e incidencias)."
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH p AS (SELECT $2::jsonb AS plan),\ncc AS (\n  INSERT INTO sync_crm_contacts (id, name, email, phone, company, stage)\n  SELECT x.new_id, x.fields->>'name', NULLIF(x.fields->>'email', ''), NULLIF(x.fields->>'phone', ''), x.fields->>'company', x.fields->>'stage' FROM p, jsonb_to_recordset(p.plan->'creates'->'crm') AS x(new_id text, fields jsonb) RETURNING id\n),\ncs AS (\n  INSERT INTO sync_sheet_rows (id, name, email, phone, company, stage)\n  SELECT x.new_id, x.fields->>'name', NULLIF(x.fields->>'email', ''), NULLIF(x.fields->>'phone', ''), x.fields->>'company', x.fields->>'stage' FROM p, jsonb_to_recordset(p.plan->'creates'->'sheet') AS x(new_id text, fields jsonb) RETURNING id\n),\nuc AS (\n  UPDATE sync_crm_contacts t SET name = CASE WHEN jsonb_exists(x.fields, 'name') THEN x.fields->>'name' ELSE t.name END,\n    email = CASE WHEN jsonb_exists(x.fields, 'email') THEN x.fields->>'email' ELSE t.email END,\n    phone = CASE WHEN jsonb_exists(x.fields, 'phone') THEN x.fields->>'phone' ELSE t.phone END,\n    company = CASE WHEN jsonb_exists(x.fields, 'company') THEN x.fields->>'company' ELSE t.company END,\n    stage = CASE WHEN jsonb_exists(x.fields, 'stage') THEN x.fields->>'stage' ELSE t.stage END\n  FROM p, jsonb_to_recordset(p.plan->'updates'->'crm') AS x(id text, fields jsonb, expected_updated_at timestamptz)\n  WHERE t.id = x.id AND t.updated_at = x.expected_updated_at RETURNING t.id\n),\nus AS (\n  UPDATE sync_sheet_rows t SET name = CASE WHEN jsonb_exists(x.fields, 'name') THEN x.fields->>'name' ELSE t.name END,\n    email = CASE WHEN jsonb_exists(x.fields, 'email') THEN x.fields->>'email' ELSE t.email END,\n    phone = CASE WHEN jsonb_exists(x.fields, 'phone') THEN x.fields->>'phone' ELSE t.phone END,\n    company = CASE WHEN jsonb_exists(x.fields, 'company') THEN x.fields->>'company' ELSE t.company END,\n    stage = CASE WHEN jsonb_exists(x.fields, 'stage') THEN x.fields->>'stage' ELSE t.stage END\n  FROM p, jsonb_to_recordset(p.plan->'updates'->'sheet') AS x(id text, fields jsonb, expected_updated_at timestamptz)\n  WHERE t.id = x.id AND t.updated_at = x.expected_updated_at RETURNING t.id\n),\ndc AS (\n  UPDATE sync_crm_contacts t SET merged_into = x.canonical\n  FROM p, jsonb_to_recordset(p.plan->'duplicates') AS x(side text, id text, canonical text)\n  WHERE x.side = 'crm' AND t.id = x.id AND t.merged_into IS NULL RETURNING t.id\n),\nds AS (\n  UPDATE sync_sheet_rows t SET duplicate_of = x.canonical\n  FROM p, jsonb_to_recordset(p.plan->'duplicates') AS x(side text, id text, canonical text)\n  WHERE x.side = 'sheet' AND t.id = x.id AND t.duplicate_of IS NULL RETURNING t.id\n),\nnl AS (\n  INSERT INTO sync_links (crm_id, sheet_id, base, how)\n  SELECT x.crm_id, x.sheet_id, x.base, x.how FROM p, jsonb_to_recordset(p.plan->'new_links') AS x(crm_id text, sheet_id text, base jsonb, how text) RETURNING link_id\n),\nbu AS (\n  UPDATE sync_links l SET base = x.base, updated_at = now()\n  FROM p, jsonb_to_recordset(p.plan->'base_updates') AS x(link_id bigint, base jsonb)\n  WHERE l.link_id = x.link_id RETURNING l.link_id\n),\ncf AS (\n  INSERT INTO sync_conflicts (crm_id, sheet_id, field, crm_value, sheet_value, base_value, crm_updated_at, sheet_updated_at, run_id)\n  SELECT x.crm_id, x.sheet_id, x.field, x.crm_value, x.sheet_value, x.base_value, x.crm_updated_at, x.sheet_updated_at, $1\n  FROM p, jsonb_to_recordset(p.plan->'conflicts') AS x(crm_id text, sheet_id text, field text, crm_value text, sheet_value text, base_value text, crm_updated_at timestamptz, sheet_updated_at timestamptz)\n  ON CONFLICT (crm_id, sheet_id, field) WHERE status = 'open' DO UPDATE SET\n    crm_value = EXCLUDED.crm_value, sheet_value = EXCLUDED.sheet_value, base_value = EXCLUDED.base_value,\n    crm_updated_at = EXCLUDED.crm_updated_at, sheet_updated_at = EXCLUDED.sheet_updated_at, last_seen = now(), run_id = EXCLUDED.run_id\n  RETURNING id\n),\ncr AS (\n  UPDATE sync_conflicts c SET status = 'resolved_auto', resolved_at = now()\n  WHERE c.status = 'open' AND NOT EXISTS (\n    SELECT 1 FROM p, jsonb_to_recordset(p.plan->'conflicts') AS x(crm_id text, sheet_id text, field text)\n    WHERE x.crm_id = c.crm_id AND x.sheet_id = c.sheet_id AND x.field = c.field) RETURNING c.id\n),\nis_ AS (\n  INSERT INTO sync_issues (key, kind, detail, run_id)\n  SELECT x.key, x.kind, x.detail, $1 FROM p, jsonb_to_recordset(p.plan->'issues') AS x(key text, kind text, detail jsonb)\n  ON CONFLICT (key) DO UPDATE SET detail = EXCLUDED.detail, last_seen = now(), resolved_at = NULL, run_id = EXCLUDED.run_id\n  RETURNING key\n),\nir AS (\n  UPDATE sync_issues i SET resolved_at = now()\n  WHERE i.resolved_at IS NULL AND NOT EXISTS (\n    SELECT 1 FROM p, jsonb_to_recordset(p.plan->'issues') AS x(key text) WHERE x.key = i.key) RETURNING i.key\n),\nch AS (\n  INSERT INTO sync_changes (run_id, side, action, entity_id, field, old_value, new_value, source_id)\n  SELECT $1, x.side, x.action, x.entity_id, x.field, x.old_value, x.new_value, x.source_id\n  FROM p, jsonb_to_recordset(p.plan->'changes') AS x(side text, action text, entity_id text, field text, old_value text, new_value text, source_id text) RETURNING id\n)\nSELECT\n  (SELECT count(*) FROM cc) AS created_crm, (SELECT count(*) FROM cs) AS created_sheet,\n  (SELECT count(*) FROM uc) AS updated_crm, (SELECT count(*) FROM us) AS updated_sheet,\n  (SELECT count(*) FROM dc) + (SELECT count(*) FROM ds) AS duplicates_marked,\n  (SELECT count(*) FROM nl) AS new_links, (SELECT count(*) FROM bu) AS base_updates,\n  (SELECT count(*) FROM cf) AS conflicts_open, (SELECT count(*) FROM cr) AS conflicts_auto_resolved,\n  (SELECT count(*) FROM ir) AS issues_resolved, (SELECT count(*) FROM ch) AS changes_logged,\n  COALESCE((SELECT jsonb_agg(jsonb_build_object('crm_id', x.crm_id, 'sheet_id', x.sheet_id, 'field', x.field, 'crm_value', x.crm_value, 'sheet_value', x.sheet_value))\n            FROM p, jsonb_to_recordset(p.plan->'conflicts') AS x(crm_id text, sheet_id text, field text, crm_value text, sheet_value text)\n            WHERE NOT EXISTS (SELECT 1 FROM sync_conflicts c WHERE c.status = 'open' AND c.crm_id = x.crm_id AND c.sheet_id = x.sheet_id AND c.field = x.field)), '[]'::jsonb) AS new_conflicts,\n  COALESCE((SELECT jsonb_agg(jsonb_build_object('kind', x.kind, 'key', x.key, 'detail', x.detail))\n            FROM p, jsonb_to_recordset(p.plan->'issues') AS x(key text, kind text, detail jsonb)\n            WHERE NOT EXISTS (SELECT 1 FROM sync_issues i WHERE i.key = x.key AND i.resolved_at IS NULL)), '[]'::jsonb) AS new_issues,\n  CASE WHEN (SELECT count(*) FROM cc) <> (p.plan->'stats'->>'created_in_crm')::int\n         OR (SELECT count(*) FROM cs) <> (p.plan->'stats'->>'created_in_sheet')::int\n         OR (SELECT count(*) FROM uc) <> (p.plan->'stats'->>'updated_in_crm')::int\n         OR (SELECT count(*) FROM us) <> (p.plan->'stats'->>'updated_in_sheet')::int\n         OR (SELECT count(*) FROM dc) + (SELECT count(*) FROM ds) <> (p.plan->'stats'->>'duplicates_marked')::int\n         OR (SELECT count(*) FROM nl) <> (p.plan->'stats'->>'new_links')::int\n         OR (SELECT count(*) FROM bu) <> jsonb_array_length(p.plan->'base_updates')\n       THEN sync_abort('sync plan was not applied cleanly (a record changed while the sync ran, or a row already existed). Nothing was written; the next run plans again from fresh data.')\n       ELSE 0 END AS integrity\nFROM p",
+        "options": {
+          "queryReplacement": "={{ [$json.run_id, JSON.stringify($json.plan)] }}"
+        }
+      },
+      "id": "00000000-0000-4000-8000-000000000873",
+      "name": "Apply Plan",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        2400,
+        100
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "postgresLocal01",
+          "name": "Postgres local (automations)"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000,
+      "onError": "continueErrorOutput",
+      "notes": "ESCRITURA atómica en una sola sentencia + historial de cada cambio. Si un registro cambió mientras corría el sync, aborta TODO y la próxima corrida replanifica. Si falla, se libera el bloqueo y se alerta."
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE idempotency_keys SET status = 'done', finished_at = now() WHERE key = 'sync-lock' AND execution_id = $1",
+        "options": {
+          "queryReplacement": "={{ [$('Build Plan').item.json.run_id] }}"
+        }
+      },
+      "id": "00000000-0000-4000-8000-000000000874",
+      "name": "Release Lock (apply failed)",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        2640,
+        420
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "postgresLocal01",
+          "name": "Postgres local (automations)"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const e = $('Apply Plan').first().json.error;\nthrow new Error('Sync apply failed and wrote NOTHING (atomic): ' + (typeof e === 'string' ? e : JSON.stringify(e)).slice(0, 500));"
+      },
+      "id": "00000000-0000-4000-8000-000000000875",
+      "name": "Apply Failed",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2880,
+        420
+      ],
+      "notes": "Falla ruidosamente → Error Handler. La sentencia fue atómica: no quedó nada a medias, y el bloqueo ya se liberó."
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const s = $('Build Plan').item.json;\nconst r = $input.item.json;\nif (Number(r.integrity) !== 0) throw new Error('Sync integrity check failed for run ' + s.run_id);\nconst applied = { created_crm: Number(r.created_crm), created_sheet: Number(r.created_sheet), updated_crm: Number(r.updated_crm), updated_sheet: Number(r.updated_sheet), duplicates_marked: Number(r.duplicates_marked), new_links: Number(r.new_links), base_updates: Number(r.base_updates), conflicts_open: Number(r.conflicts_open), conflicts_auto_resolved: Number(r.conflicts_auto_resolved), issues_resolved: Number(r.issues_resolved), changes_logged: Number(r.changes_logged) };\nreturn { json: { ...s, applied, new_conflicts: r.new_conflicts || [], new_issues: r.new_issues || [] } };"
+      },
+      "id": "00000000-0000-4000-8000-000000000876",
+      "name": "Applied",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2640,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE idempotency_keys SET status = 'done', finished_at = now() WHERE key = 'sync-lock' AND execution_id = $1",
+        "options": {
+          "queryReplacement": "={{ [$('Applied').item.json.run_id] }}"
+        }
+      },
+      "id": "00000000-0000-4000-8000-000000000877",
+      "name": "Release Lock",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        2880,
+        100
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "postgresLocal01",
+          "name": "Postgres local (automations)"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000,
+      "notes": "Libera el bloqueo (si la corrida falla antes, vence solo)."
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH ex AS (SELECT review_id, token FROM sync_reviews WHERE expires_at > now() + interval '1 day' ORDER BY created_at DESC LIMIT 1),\nins AS (\n  INSERT INTO sync_reviews (review_id, token, expires_at)\n  SELECT 'rv' || substr(md5(random()::text), 1, 12), md5(random()::text || clock_timestamp()::text), now() + interval '7 days'\n  WHERE NOT EXISTS (SELECT 1 FROM ex) AND EXISTS (SELECT 1 FROM sync_conflicts WHERE status = 'open') RETURNING review_id, token\n)\nSELECT review_id, token FROM ins UNION ALL SELECT review_id, token FROM ex LIMIT 1",
+        "options": {}
+      },
+      "id": "00000000-0000-4000-8000-000000000878",
+      "name": "Ensure Review Link",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        3120,
+        100
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "postgresLocal01",
+          "name": "Postgres local (automations)"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000,
+      "alwaysOutputData": true,
+      "notes": "Link de revisión de conflictos (vence en 7 días); se reutiliza mientras siga vigente."
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const { buildNotice } = (() => {\n  const module = { exports: {} };\n// CRM ↔ Sheets Sync: lógica 100 % determinística (sin IA). Planifica; no escribe nada.\r\n// Reglas: nunca se borra ni se propaga un borrado; un cambio en un solo lado se copia; un cambio distinto en los DOS lados es un\r\n// conflicto y no se toca ninguno; los casos dudosos (mismo teléfono, nombres distintos) se reportan y NO se fusionan.\r\nconst FIELDS = ['name', 'email', 'phone', 'company', 'stage'];\r\n\r\nconst fold = s => String(s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\\s+/g, ' ').trim();\r\n\r\nfunction normEmail(v) {\r\n  const e = String(v ?? '').trim().toLowerCase();\r\n  return /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(e) ? e : '';\r\n}\r\n\r\n// Misma regla que norm_phone() en SQL: menos de 8 dígitos = no es un teléfono.\r\nfunction normPhone(v, cc = '57') {\r\n  const s = String(v ?? '').trim();\r\n  const d = s.replace(/[^0-9]/g, '');\r\n  if (d.length < 8) return '';\r\n  if (s.startsWith('+') || d.length >= 11) return '+' + d;\r\n  return '+' + cc + d;\r\n}\r\n\r\n// Similitud de nombres: Jaccard de palabras, ignorando mayúsculas y tildes. Vacío = 0.\r\nfunction nameSimilarity(a, b) {\r\n  const ta = new Set(fold(a).split(' ').filter(Boolean));\r\n  const tb = new Set(fold(b).split(' ').filter(Boolean));\r\n  if (!ta.size || !tb.size) return 0;\r\n  let inter = 0;\r\n  for (const t of ta) if (tb.has(t)) inter++;\r\n  return inter / (ta.size + tb.size - inter);\r\n}\r\n\r\n// Forma canónica para COMPARAR (nunca para mostrar): evita falsos conflictos por mayúsculas, espacios o formato de teléfono.\r\nconst canon = (field, v, cc) => field === 'email' ? normEmail(v) : field === 'phone' ? normPhone(v, cc) : fold(v);\r\n// Forma para ESCRIBIR en el otro sistema.\r\nconst outValue = (field, v, cc) => field === 'email' ? normEmail(v) : field === 'phone' ? normPhone(v, cc) : String(v ?? '').replace(/\\s+/g, ' ').trim();\r\n\r\nconst createdId = (side, fromId) => (side === 'crm' ? 'crm-from-' : 'row-from-') + fromId;\r\n\r\nfunction planSync({ crm = [], sheet = [], links = [], defaultCountry = '57', nameThreshold = 0.5 } = {}) {\r\n  const cc = defaultCountry;\r\n  const plan = {\r\n    creates: { crm: [], sheet: [] },\r\n    updates: { crm: [], sheet: [] },\r\n    new_links: [],\r\n    base_updates: [],\r\n    duplicates: [],\r\n    conflicts: [],\r\n    issues: [],\r\n    changes: [],\r\n    stats: {},\r\n  };\r\n  const seenKeys = new Set();\r\n  // Una incidencia por clave: la misma pareja puede detectarse desde ambos lados.\r\n  const issue = (kind, key, detail) => { if (seenKeys.has(key)) return; seenKeys.add(key); plan.issues.push({ kind, key, detail }); };\r\n  const keyOf = (...p) => p.join(':');\r\n  const pairKey = (kind, side, a, b) => keyOf(kind, side, ...[a, b].sort());\r\n\r\n  const prep = (side, rows) => {\r\n    const ok = [];\r\n    for (const r of [...rows].sort((a, b) => String(a.id).localeCompare(String(b.id)))) {\r\n      const n = { ...r, id: String(r.id), _email: normEmail(r.email), _phone: normPhone(r.phone, cc) };\r\n      if (!n._email && !n._phone) { issue('invalid_record', keyOf('invalid', side, n.id), { side, id: n.id, reason: 'no_valid_email_or_phone' }); continue; }\r\n      ok.push(n);\r\n    }\r\n    return ok;\r\n  };\r\n\r\n  const linkedCrm = new Set(links.map(l => String(l.crm_id)));\r\n  const linkedSheet = new Set(links.map(l => String(l.sheet_id)));\r\n\r\n  // ── 1) Duplicados dentro de un mismo lado ──\r\n  const dedupe = (side, rows, linkedSet) => {\r\n    const parent = new Map(rows.map(r => [r.id, r.id]));\r\n    const find = x => { while (parent.get(x) !== x) { parent.set(x, parent.get(parent.get(x))); x = parent.get(x); } return x; };\r\n    const union = (a, b) => { const ra = find(a), rb = find(b); if (ra !== rb) parent.set(rb, ra); };\r\n    const reason = new Map();\r\n    for (let i = 0; i < rows.length; i++) for (let j = i + 1; j < rows.length; j++) {\r\n      const a = rows[i], b = rows[j];\r\n      if (a._email && a._email === b._email) { union(a.id, b.id); reason.set(b.id, 'same_email'); }\r\n      else if (a._phone && a._phone === b._phone) {\r\n        if (nameSimilarity(a.name, b.name) >= nameThreshold) { union(a.id, b.id); reason.set(b.id, 'same_phone_similar_name'); }\r\n        else issue('possible_duplicate', pairKey('dup', side, a.id, b.id), { side, ids: [a.id, b.id], reason: 'same_phone_different_name' });\r\n      }\r\n    }\r\n    const groups = new Map();\r\n    for (const r of rows) { const g = find(r.id); groups.set(g, [...(groups.get(g) || []), r]); }\r\n    const active = [];\r\n    for (const members of groups.values()) {\r\n      if (members.length === 1) { active.push(members[0]); continue; }\r\n      const linked = members.filter(m => linkedSet.has(m.id));\r\n      if (linked.length > 1) {\r\n        issue('possible_duplicate', keyOf('dup-linked', side, ...members.map(m => m.id).sort()), { side, ids: members.map(m => m.id), reason: 'several_linked_records' });\r\n        active.push(...members);\r\n        continue;\r\n      }\r\n      const canonical = linked[0] || members[0];\r\n      active.push(canonical);\r\n      for (const m of members) if (m !== canonical) plan.duplicates.push({ side, id: m.id, canonical: canonical.id, reason: reason.get(m.id) || 'same_email' });\r\n    }\r\n    return active;\r\n  };\r\n\r\n  const crmA = dedupe('crm', prep('crm', crm), linkedCrm);\r\n  const sheetA = dedupe('sheet', prep('sheet', sheet), linkedSheet);\r\n  const crmById = new Map(crmA.map(r => [r.id, r]));\r\n  const sheetById = new Map(sheetA.map(r => [r.id, r]));\r\n\r\n  // ── 2) Pares ya vinculados: fusión de tres vías contra el último valor sincronizado ──\r\n  const mergePair = (c, s, base, upd, linkRef) => {\r\n    const newBase = { ...base };\r\n    const toSheet = {}, toCrm = {};\r\n    for (const f of FIELDS) {\r\n      const cv = canon(f, c[f], cc), sv = canon(f, s[f], cc), bv = base[f] ?? '';\r\n      if (cv === sv) { newBase[f] = cv; continue; }\r\n      const crmChanged = cv !== bv, sheetChanged = sv !== bv;\r\n      if (crmChanged && sheetChanged) {\r\n        plan.conflicts.push({ crm_id: c.id, sheet_id: s.id, field: f, crm_value: String(c[f] ?? ''), sheet_value: String(s[f] ?? ''), base_value: bv, crm_updated_at: c.updated_at ?? null, sheet_updated_at: s.updated_at ?? null });\r\n      } else if (crmChanged) {\r\n        if (cv === '') issue('blank_ignored', keyOf('blank', linkRef, f, 'crm'), { field: f, crm_id: c.id, sheet_id: s.id, side: 'crm' });\r\n        else { toSheet[f] = outValue(f, c[f], cc); newBase[f] = cv; }\r\n      } else if (sheetChanged) {\r\n        if (sv === '') issue('blank_ignored', keyOf('blank', linkRef, f, 'sheet'), { field: f, crm_id: c.id, sheet_id: s.id, side: 'sheet' });\r\n        else { toCrm[f] = outValue(f, s[f], cc); newBase[f] = sv; }\r\n      }\r\n    }\r\n    if (Object.keys(toSheet).length) {\r\n      plan.updates.sheet.push({ id: s.id, fields: toSheet, expected_updated_at: s.updated_at ?? null });\r\n      for (const [f, v] of Object.entries(toSheet)) plan.changes.push({ side: 'sheet', action: 'update', entity_id: s.id, field: f, old_value: String(s[f] ?? ''), new_value: v, source_id: c.id });\r\n    }\r\n    if (Object.keys(toCrm).length) {\r\n      plan.updates.crm.push({ id: c.id, fields: toCrm, expected_updated_at: c.updated_at ?? null });\r\n      for (const [f, v] of Object.entries(toCrm)) plan.changes.push({ side: 'crm', action: 'update', entity_id: c.id, field: f, old_value: String(c[f] ?? ''), new_value: v, source_id: s.id });\r\n    }\r\n    return newBase;\r\n  };\r\n\r\n  for (const l of [...links].sort((a, b) => Number(a.link_id) - Number(b.link_id))) {\r\n    const c = crmById.get(String(l.crm_id)), s = sheetById.get(String(l.sheet_id));\r\n    if (!c || !s) { issue('orphan_link', keyOf('orphan', l.link_id), { link_id: l.link_id, crm_id: l.crm_id, sheet_id: l.sheet_id, missing: !c && !s ? 'both' : !c ? 'crm' : 'sheet' }); continue; }\r\n    const base = l.base || {};\r\n    const newBase = mergePair(c, s, base, null, String(l.link_id));\r\n    if (FIELDS.some(f => (newBase[f] ?? '') !== (base[f] ?? ''))) plan.base_updates.push({ link_id: l.link_id, base: newBase });\r\n  }\r\n\r\n  // ── 3) Registros sin vínculo: emparejar, retener o crear ──\r\n  const freeCrm = crmA.filter(r => !linkedCrm.has(r.id));\r\n  const freeSheet = sheetA.filter(r => !linkedSheet.has(r.id));\r\n  const taken = new Set();\r\n  const pairs = [];\r\n  for (const c of freeCrm) {\r\n    let m = c._email ? freeSheet.find(s => !taken.has(s.id) && s._email === c._email) : null;\r\n    if (!m && c._phone) m = freeSheet.find(s => !taken.has(s.id) && s._phone === c._phone && nameSimilarity(c.name, s.name) >= nameThreshold);\r\n    if (m) { taken.add(m.id); pairs.push([c, m]); }\r\n  }\r\n  const pairedCrm = new Set(pairs.map(p => p[0].id));\r\n  for (const [c, s] of pairs) {\r\n    const base = {};\r\n    for (const f of FIELDS) { const cv = canon(f, c[f], cc), sv = canon(f, s[f], cc); base[f] = cv === sv ? cv : ''; }\r\n    const nb = mergePair(c, s, base, null, `new:${c.id}:${s.id}`);\r\n    plan.new_links.push({ crm_id: c.id, sheet_id: s.id, base: nb, how: c._email && c._email === s._email ? 'email' : 'phone_and_name' });\r\n  }\r\n\r\n  const heldCrm = new Set(), heldSheet = new Set();\r\n  const hold = (c, s, reason) => { heldCrm.add(c.id); heldSheet.add(s.id); issue('possible_duplicate', pairKey('dup-x', 'crm-sheet', c.id, s.id), { crm_id: c.id, sheet_id: s.id, reason }); };\r\n  const looksSame = (a, b) => (a._email && a._email === b._email) || (a._phone && a._phone === b._phone);\r\n  for (const c of freeCrm) {\r\n    if (pairedCrm.has(c.id)) continue;\r\n    for (const s of sheetA) if (looksSame(c, s)) hold(c, s, c._email && c._email === s._email ? 'same_email_other_record_linked' : 'same_phone_different_name');\r\n  }\r\n  for (const s of freeSheet) {\r\n    if (taken.has(s.id)) continue;\r\n    for (const c of crmA) if (looksSame(c, s)) hold(c, s, c._email && c._email === s._email ? 'same_email_other_record_linked' : 'same_phone_different_name');\r\n  }\r\n\r\n  const fieldsOf = r => Object.fromEntries(FIELDS.map(f => [f, outValue(f, r[f], cc)]));\r\n  const baseOf = r => Object.fromEntries(FIELDS.map(f => [f, canon(f, r[f], cc)]));\r\n  for (const c of freeCrm) if (!pairedCrm.has(c.id) && !heldCrm.has(c.id)) {\r\n    plan.creates.sheet.push({ new_id: createdId('sheet', c.id), from_id: c.id, fields: fieldsOf(c), base: baseOf(c) });\r\n    plan.new_links.push({ crm_id: c.id, sheet_id: createdId('sheet', c.id), base: baseOf(c), how: 'created_in_sheet' });\r\n  }\r\n  for (const s of freeSheet) if (!taken.has(s.id) && !heldSheet.has(s.id)) {\r\n    plan.creates.crm.push({ new_id: createdId('crm', s.id), from_id: s.id, fields: fieldsOf(s), base: baseOf(s) });\r\n    plan.new_links.push({ crm_id: createdId('crm', s.id), sheet_id: s.id, base: baseOf(s), how: 'created_in_crm' });\r\n  }\r\n\r\n  for (const c of plan.creates.sheet) plan.changes.push({ side: 'sheet', action: 'create', entity_id: c.new_id, field: null, old_value: null, new_value: JSON.stringify(c.fields), source_id: c.from_id });\r\n  for (const c of plan.creates.crm) plan.changes.push({ side: 'crm', action: 'create', entity_id: c.new_id, field: null, old_value: null, new_value: JSON.stringify(c.fields), source_id: c.from_id });\r\n  for (const d of plan.duplicates) plan.changes.push({ side: d.side, action: 'mark_duplicate', entity_id: d.id, field: 'merged_into', old_value: null, new_value: d.canonical, source_id: d.reason });\r\n\r\n  const n = k => plan.issues.filter(i => i.kind === k).length;\r\n  plan.stats = {\r\n    crm_records: crmA.length, sheet_records: sheetA.length, links: links.length,\r\n    created_in_crm: plan.creates.crm.length, created_in_sheet: plan.creates.sheet.length,\r\n    updated_in_crm: plan.updates.crm.length, updated_in_sheet: plan.updates.sheet.length,\r\n    new_links: plan.new_links.length, duplicates_marked: plan.duplicates.length, conflicts: plan.conflicts.length,\r\n    invalid: n('invalid_record'), possible_duplicates: n('possible_duplicate'), orphan_links: n('orphan_link'), blank_ignored: n('blank_ignored'),\r\n  };\r\n  plan.writes = plan.stats.created_in_crm + plan.stats.created_in_sheet + plan.stats.updated_in_crm + plan.stats.updated_in_sheet + plan.base_updates.length + plan.duplicates.length;\r\n  return plan;\r\n}\r\n\r\n// Qué hacer con un conflicto según la decisión de la persona. 'pending' (o cualquier otra cosa) no toca nada: falla cerrado.\r\nfunction resolveChoice(conflict, choice) {\r\n  if (choice === 'crm') return { action: 'copy', write_to: 'sheet', value: outValue(conflict.field, conflict.crm_value), base: canon(conflict.field, conflict.crm_value) };\r\n  if (choice === 'sheet') return { action: 'copy', write_to: 'crm', value: outValue(conflict.field, conflict.sheet_value), base: canon(conflict.field, conflict.sheet_value) };\r\n  return { action: 'none' };\r\n}\r\n\r\nconst FIELD_LABEL = { name: 'Name', email: 'Email', phone: 'Phone', company: 'Company', stage: 'Stage' };\r\nconst KIND_LABEL = { invalid_record: 'Invalid record (no valid email or phone)', possible_duplicate: 'Possible duplicate (not merged)', orphan_link: 'Linked record missing on one side (nothing deleted)', blank_ignored: 'Field cleared on one side (not copied)' };\r\n\r\nfunction describeIssue(i) {\r\n  const d = i.detail || {};\r\n  if (i.kind === 'invalid_record') return `${d.side} ${d.id}: ${d.reason}`;\r\n  if (i.kind === 'possible_duplicate') return d.side ? `${d.side} ${d.ids.join(' & ')}: ${d.reason}` : `crm ${d.crm_id} & sheet ${d.sheet_id}: ${d.reason}`;\r\n  if (i.kind === 'orphan_link') return `link ${d.link_id}: missing on ${d.missing} (crm ${d.crm_id}, sheet ${d.sheet_id})`;\r\n  return `${d.field} cleared on ${d.side} (crm ${d.crm_id}, sheet ${d.sheet_id})`;\r\n}\r\n\r\n// Email de aviso: solo lo NUEVO (incidencias y conflictos recién vistos). Texto plano + HTML escapado.\r\nfunction buildNotice({ stats, newIssues = [], newConflicts = [], reviewLink = null, dataLabel = '' }) {\r\n  const esc = v => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\r\n  const lines = [dataLabel, '', `Sync run: ${stats.created_in_crm + stats.created_in_sheet} created, ${stats.updated_in_crm + stats.updated_in_sheet} updated, ${stats.duplicates_marked} duplicate(s) marked.`, ''];\r\n  if (newConflicts.length) {\r\n    lines.push(`${newConflicts.length} new conflict(s) - both systems changed the same field; nothing was overwritten:`);\r\n    for (const c of newConflicts.slice(0, 20)) lines.push(`  - ${FIELD_LABEL[c.field] || c.field} (crm ${c.crm_id} / sheet ${c.sheet_id}): CRM \"${c.crm_value}\" vs Sheet \"${c.sheet_value}\"`);\r\n    if (reviewLink) lines.push('', `Resolve them here: ${reviewLink}`);\r\n    lines.push('');\r\n  }\r\n  if (newIssues.length) {\r\n    lines.push(`${newIssues.length} new item(s) need a look:`);\r\n    for (const i of newIssues.slice(0, 20)) lines.push(`  - ${KIND_LABEL[i.kind] || i.kind}: ${describeIssue(i)}`);\r\n    lines.push('');\r\n  }\r\n  const html = `<p>${esc(dataLabel)}</p><p>Sync run: <b>${stats.created_in_crm + stats.created_in_sheet}</b> created, <b>${stats.updated_in_crm + stats.updated_in_sheet}</b> updated, <b>${stats.duplicates_marked}</b> duplicate(s) marked.</p>`\r\n    + (newConflicts.length ? `<p><b>${newConflicts.length}</b> new conflict(s): both systems changed the same field and nothing was overwritten.</p><ul>${newConflicts.slice(0, 20).map(c => `<li>${esc(FIELD_LABEL[c.field] || c.field)}: CRM \"${esc(c.crm_value)}\" vs Sheet \"${esc(c.sheet_value)}\"</li>`).join('')}</ul>${reviewLink ? `<p><a href=\"${esc(reviewLink)}\" style=\"display:inline-block;padding:12px 22px;background:#1e40af;color:#ffffff;border-radius:8px;text-decoration:none;font-weight:700\">Resolve conflicts</a></p>` : ''}` : '')\r\n    + (newIssues.length ? `<p><b>${newIssues.length}</b> new item(s) need a look:</p><ul>${newIssues.slice(0, 20).map(i => `<li>${esc(KIND_LABEL[i.kind] || i.kind)}: ${esc(describeIssue(i))}</li>`).join('')}</ul>` : '');\r\n  return { text: lines.join('\\n'), html };\r\n}\r\n\r\nmodule.exports = { FIELDS, FIELD_LABEL, normEmail, normPhone, nameSimilarity, canon, outValue, createdId, planSync, resolveChoice, buildNotice, describeIssue };\r\n\n  return module.exports;\n})();\n\nconst s = $('Applied').item.json;\nconst r = $input.item.json;\nconst link = r.review_id ? s.config.reviewUrl + '?review=' + r.review_id + '&token=' + r.token : null;\nconst notify = s.new_conflicts.length > 0 || s.new_issues.length > 0;\nconst notice = notify ? buildNotice({ stats: s.plan.stats, newIssues: s.new_issues, newConflicts: s.new_conflicts, reviewLink: s.new_conflicts.length ? link : null, dataLabel: s.config.dataLabel }) : null;\nreturn { json: { ...s, notify, review_link: link, notice } };"
+      },
+      "id": "00000000-0000-4000-8000-000000000879",
+      "name": "Build Notice",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3360,
+        100
+      ],
+      "notes": "Solo avisa de lo NUEVO (conflictos e incidencias recién vistos), para no repetir el mismo aviso cada 15 minutos."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "00000000-0000-4000-8000-000000000880",
+              "leftValue": "={{ $json.notify }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "00000000-0000-4000-8000-000000000881",
+      "name": "Notify?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        3600,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "email",
+        "operation": "send",
+        "fromEmail": "={{ $json.config.fromEmail }}",
+        "toEmail": "={{ $json.config.ownerEmail }}",
+        "subject": "={{ 'Sync needs a look: ' + $json.new_conflicts.length + ' conflict(s), ' + $json.new_issues.length + ' item(s)' }}",
+        "emailFormat": "both",
+        "text": "={{ $json.notice.text }}",
+        "html": "={{ $json.notice.html }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "00000000-0000-4000-8000-000000000882",
+      "name": "Send Notice Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        3840,
+        0
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "smtpMailpit01",
+          "name": "Mailpit (local SMTP)"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "notes": "Aviso a una persona. El link lleva a la página de conflictos (el flujo no resuelve nada solo)."
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const s = $('Build Notice').item.json;\nconst r = $input.item.json;\nreturn { json: { ...s, notice_sent: !r.error, notice_error: r.error ? JSON.stringify(r.error) : null } };"
+      },
+      "id": "00000000-0000-4000-8000-000000000883",
+      "name": "Capture Notice",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4080,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const s = $input.item.json;\nreturn { json: { status: 'ok', run_id: s.run_id, trigger: s.trigger, stats: s.plan.stats, applied: s.applied, new_conflicts: s.new_conflicts.length, new_issues: s.new_issues.length, notified: s.notice_sent === true, review_link: s.review_link } };"
+      },
+      "id": "00000000-0000-4000-8000-000000000884",
+      "name": "Final Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4320,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const s = $input.item.json;\nif (s.notice_sent === false) throw new Error('Sync run ' + s.run_id + ' finished and wrote its changes, but the notice email failed: ' + s.notice_error + '. Open conflicts/items are in sync_conflicts and sync_issues.');\nreturn { json: { ok: true } };"
+      },
+      "id": "00000000-0000-4000-8000-000000000885",
+      "name": "Assert Notice",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4320,
+        -180
+      ],
+      "notes": "Falla ruidosamente DESPUÉS de dejar todo guardado: un aviso que no llegó no puede quedar en silencio."
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO execution_log (run_id, workflow, entity_id, step, status, error, detail) VALUES ($1, $2, NULLIF($3, ''), $4, $5, NULLIF($6, ''), $7::jsonb)",
+        "options": {
+          "queryReplacement": "={{ [$execution.id, \"sync-run\", String(($json.run_id) ?? ''), \"lock\", $json.lock.acquired ? 'ok' : 'skipped', ($json.lock.acquired ? '' : 'another_run_in_progress') ?? '', JSON.stringify(({ trigger: $json.trigger }))] }}"
+        }
+      },
+      "id": "00000000-0000-4000-8000-000000000886",
+      "name": "Log · lock",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1200,
+        70
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "postgresLocal01",
+          "name": "Postgres local (automations)"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000,
+      "notes": "Log de ejecución (Postgres). Rama lateral."
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO execution_log (run_id, workflow, entity_id, step, status, error, detail) VALUES ($1, $2, NULLIF($3, ''), $4, $5, NULLIF($6, ''), $7::jsonb)",
+        "options": {
+          "queryReplacement": "={{ [$execution.id, \"sync-run\", String(($json.run_id) ?? ''), \"plan_built\", 'ok', ('') ?? '', JSON.stringify(({ stats: $json.plan.stats, writes: $json.plan.writes }))] }}"
+        }
+      },
+      "id": "00000000-0000-4000-8000-000000000887",
+      "name": "Log · plan_built",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        2160,
+        -30
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "postgresLocal01",
+          "name": "Postgres local (automations)"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000,
+      "notes": "Log de ejecución (Postgres). Rama lateral."
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO execution_log (run_id, workflow, entity_id, step, status, error, detail) VALUES ($1, $2, NULLIF($3, ''), $4, $5, NULLIF($6, ''), $7::jsonb)",
+        "options": {
+          "queryReplacement": "={{ [$execution.id, \"sync-run\", String(($json.run_id) ?? ''), \"plan_applied\", 'ok', ('') ?? '', JSON.stringify(({ applied: $json.applied }))] }}"
+        }
+      },
+      "id": "00000000-0000-4000-8000-000000000888",
+      "name": "Log · plan_applied",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        2640,
+        -30
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "postgresLocal01",
+          "name": "Postgres local (automations)"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000,
+      "notes": "Log de ejecución (Postgres). Rama lateral."
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO execution_log (run_id, workflow, entity_id, step, status, error, detail) VALUES ($1, $2, NULLIF($3, ''), $4, $5, NULLIF($6, ''), $7::jsonb)",
+        "options": {
+          "queryReplacement": "={{ [$execution.id, \"sync-run\", String(($json.run_id) ?? ''), \"notice_built\", $json.notify ? 'ok' : 'skipped', ('') ?? '', JSON.stringify(({ notify: $json.notify, new_conflicts: $json.new_conflicts.length, new_issues: $json.new_issues.length }))] }}"
+        }
+      },
+      "id": "00000000-0000-4000-8000-000000000889",
+      "name": "Log · notice_built",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        3360,
+        -30
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "postgresLocal01",
+          "name": "Postgres local (automations)"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000,
+      "notes": "Log de ejecución (Postgres). Rama lateral."
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO execution_log (run_id, workflow, entity_id, step, status, error, detail) VALUES ($1, $2, NULLIF($3, ''), $4, $5, NULLIF($6, ''), $7::jsonb)",
+        "options": {
+          "queryReplacement": "={{ [$execution.id, \"sync-run\", String(($json.run_id) ?? ''), \"notice_sent\", $json.notice_sent ? 'ok' : 'failed', ($json.notice_error ?? '') ?? '', JSON.stringify(({}))] }}"
+        }
+      },
+      "id": "00000000-0000-4000-8000-000000000890",
+      "name": "Log · notice_sent",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        4080,
+        -310
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "postgresLocal01",
+          "name": "Postgres local (automations)"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000,
+      "notes": "Log de ejecución (Postgres). Rama lateral."
+    },
+    {
+      "parameters": {
+        "content": "## Sync · CRM ↔ Sheets Run\nEvery 15 min: lock → read both sides → PLAN (pure code, no AI) → apply atomically → notify only about what is new. Never deletes, never overwrites a field both sides changed: it becomes a conflict for a person.",
+        "width": 2400,
+        "height": 130,
+        "color": 7
+      },
+      "id": "00000000-0000-4000-8000-000000000891",
+      "name": "Note 33",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -20,
+        -330
+      ]
+    },
+    {
+      "parameters": {
+        "content": "### Per-step log → Postgres\nNodes \"Log · …\": side branches. Every change is also in sync_changes (before / after).",
+        "width": 480,
+        "height": 90,
+        "color": 7
+      },
+      "id": "00000000-0000-4000-8000-000000000892",
+      "name": "Note 34",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -20,
+        780
+      ]
+    }
+  ],
+  "connections": {
+    "Lock Result": {
+      "main": [
+        [
+          {
+            "node": "Log · lock",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Locked?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Plan": {
+      "main": [
+        [
+          {
+            "node": "Log · plan_built",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Apply Plan",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Applied": {
+      "main": [
+        [
+          {
+            "node": "Log · plan_applied",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Release Lock",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Notice": {
+      "main": [
+        [
+          {
+            "node": "Log · notice_built",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Notify?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Capture Notice": {
+      "main": [
+        [
+          {
+            "node": "Log · notice_sent",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Final Result",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Assert Notice",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Schedule 15 min": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Manual Trigger (webhook)": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "Prepare Run",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Run": {
+      "main": [
+        [
+          {
+            "node": "Valid Request?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Valid Request?": {
+      "main": [
+        [
+          {
+            "node": "Acquire Lock",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Rejected",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Acquire Lock": {
+      "main": [
+        [
+          {
+            "node": "Lock Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Locked?": {
+      "main": [
+        [
+          {
+            "node": "Live Mode?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Busy",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Live Mode?": {
+      "main": [
+        [
+          {
+            "node": "Release Lock (live)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Read Both Sides (mock adapter)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Release Lock (live)": {
+      "main": [
+        [
+          {
+            "node": "Live Not Built",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Both Sides (mock adapter)": {
+      "main": [
+        [
+          {
+            "node": "Build Plan",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Apply Plan": {
+      "main": [
+        [
+          {
+            "node": "Applied",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Release Lock (apply failed)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Release Lock (apply failed)": {
+      "main": [
+        [
+          {
+            "node": "Apply Failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Release Lock": {
+      "main": [
+        [
+          {
+            "node": "Ensure Review Link",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ensure Review Link": {
+      "main": [
+        [
+          {
+            "node": "Build Notice",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notify?": {
+      "main": [
+        [
+          {
+            "node": "Send Notice Email",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Final Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Notice Email": {
+      "main": [
+        [
+          {
+            "node": "Capture Notice",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/Bogota",
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all",
+    "saveManualExecutions": true,
+    "saveExecutionProgress": true,
+    "errorWorkflow": "errhandler000001"
+  },
+  "active": false,
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": false
+  }
+}

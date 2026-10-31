@@ -1,0 +1,365 @@
+{
+  "id": "syncweekly00001",
+  "name": "Sync · Weekly Summary (Auditable)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 8 * * 1"
+            }
+          ]
+        }
+      },
+      "id": "00000000-0000-4000-8000-000000000923",
+      "name": "Weekly Schedule",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        100
+      ],
+      "notes": "Lunes 08:00."
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "sync-weekly",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "00000000-0000-4000-8000-000000000925",
+      "name": "Manual Trigger (webhook)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        320
+      ],
+      "webhookId": "00000000-0000-4000-8000-000000000924",
+      "notes": "Para demos: POST /webhook/sync-weekly con la cabecera x-sync-token."
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "{\n  \"config\": {\n    \"mode\": \"mock\",\n    \"defaultCountry\": \"57\",\n    \"nameThreshold\": 0.5,\n    \"lockSeconds\": 300,\n    \"internalToken\": \"local-dev-token\",\n    \"reviewUrl\": \"http://localhost:5678/webhook/sync-review\",\n    \"reviewSubmitUrl\": \"/webhook/sync-review-submit\",\n    \"ownerEmail\": \"ops-lead@example.com\",\n    \"fromEmail\": \"sync@demo.example\",\n    \"dataLabel\": \"TEST DATA · synthetic contacts (mock CRM and sheet)\"\n  }\n}",
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "00000000-0000-4000-8000-000000000926",
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        240,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const item = $input.item.json;\nconst c = item.config;\nconst isWebhook = item.headers !== undefined;\nconst errors = [];\nif (isWebhook && item.headers['x-sync-token'] !== c.internalToken) errors.push('bad_token');\nreturn { json: { config: c, run_id: String($execution.id), validation: { ok: errors.length === 0, errors } } };"
+      },
+      "id": "00000000-0000-4000-8000-000000000927",
+      "name": "Prepare",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "00000000-0000-4000-8000-000000000928",
+              "leftValue": "={{ $json.validation.ok }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "00000000-0000-4000-8000-000000000929",
+      "name": "Valid Request?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        720,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "return { json: { status: 'rejected', errors: $input.item.json.validation.errors } };"
+      },
+      "id": "00000000-0000-4000-8000-000000000930",
+      "name": "Rejected",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        960,
+        420
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT\n  (SELECT count(*) FROM sync_links) AS links,\n  (SELECT count(*) FROM execution_log WHERE workflow = 'sync-run' AND step = 'plan_applied' AND created_at > now() - interval '7 days') AS runs,\n  (SELECT count(*) FROM execution_log WHERE workflow LIKE 'sync%' AND status = 'failed' AND created_at > now() - interval '7 days') AS failed_steps,\n  (SELECT count(*) FROM sync_changes WHERE action = 'create' AND created_at > now() - interval '7 days') AS created,\n  (SELECT count(*) FROM sync_changes WHERE action = 'update' AND created_at > now() - interval '7 days') AS updated_fields,\n  (SELECT count(*) FROM sync_changes WHERE action = 'mark_duplicate' AND created_at > now() - interval '7 days') AS duplicates_marked,\n  (SELECT count(*) FROM sync_changes WHERE action = 'resolve_conflict' AND created_at > now() - interval '7 days') AS conflicts_resolved_by_people,\n  (SELECT count(*) FROM sync_conflicts WHERE status = 'open') AS open_conflicts,\n  (SELECT count(*) FROM sync_issues WHERE resolved_at IS NULL) AS open_items,\n  (SELECT count(*) FROM sync_issues WHERE resolved_at IS NULL AND kind = 'invalid_record') AS invalid_records,\n  (SELECT count(*) FROM sync_issues WHERE resolved_at IS NULL AND kind = 'possible_duplicate') AS possible_duplicates",
+        "options": {}
+      },
+      "id": "00000000-0000-4000-8000-000000000931",
+      "name": "Weekly Stats",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        960,
+        200
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "postgresLocal01",
+          "name": "Postgres local (automations)"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000,
+      "notes": "Todo por SQL contra las tablas del sync y el log de ejecución. Sin IA."
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const s = $('Prepare').item.json;\nconst r = Object.fromEntries(Object.entries($input.item.json).map(([k, v]) => [k, Number(v)]));\nconst lines = [s.config.dataLabel, '', 'Weekly sync summary (last 7 days)', '',\n  'Linked contacts: ' + r.links,\n  'Sync runs completed: ' + r.runs + (r.failed_steps ? '  |  FAILED steps: ' + r.failed_steps : ''),\n  'Records created in the other system: ' + r.created,\n  'Fields updated: ' + r.updated_fields,\n  'Duplicates marked (nothing deleted): ' + r.duplicates_marked,\n  'Conflicts resolved by a person: ' + r.conflicts_resolved_by_people, '',\n  'Waiting for a person now:',\n  '  Open conflicts: ' + r.open_conflicts,\n  '  Other open items: ' + r.open_items + ' (invalid records: ' + r.invalid_records + ', possible duplicates: ' + r.possible_duplicates + ')'];\nreturn { json: { ...s, stats: r, text: lines.join('\\n') } };"
+      },
+      "id": "00000000-0000-4000-8000-000000000932",
+      "name": "Build Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1200,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "email",
+        "operation": "send",
+        "fromEmail": "={{ $json.config.fromEmail }}",
+        "toEmail": "={{ $json.config.ownerEmail }}",
+        "subject": "={{ 'Weekly CRM ↔ Sheets sync summary: ' + $json.stats.open_conflicts + ' open conflict(s)' }}",
+        "emailFormat": "text",
+        "text": "={{ $json.text }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "00000000-0000-4000-8000-000000000933",
+      "name": "Send Summary Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        1440,
+        200
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "smtpMailpit01",
+          "name": "Mailpit (local SMTP)"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const s = $('Build Summary').item.json;\nconst r = $input.item.json;\nif (r.error) throw new Error('Weekly sync summary email failed: ' + JSON.stringify(r.error));\nreturn { json: { status: 'sent', stats: s.stats } };"
+      },
+      "id": "00000000-0000-4000-8000-000000000934",
+      "name": "Final Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1680,
+        200
+      ],
+      "notes": "Si el email falla, el flujo falla ruidosamente."
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO execution_log (run_id, workflow, entity_id, step, status, error, detail) VALUES ($1, $2, NULLIF($3, ''), $4, $5, NULLIF($6, ''), $7::jsonb)",
+        "options": {
+          "queryReplacement": "={{ [$execution.id, \"sync-weekly\", String(($json.run_id) ?? ''), \"summary_built\", 'ok', ('') ?? '', JSON.stringify(({ stats: $json.stats }))] }}"
+        }
+      },
+      "id": "00000000-0000-4000-8000-000000000935",
+      "name": "Log · summary_built",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1200,
+        70
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "postgresLocal01",
+          "name": "Postgres local (automations)"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000,
+      "notes": "Log de ejecución (Postgres). Rama lateral."
+    },
+    {
+      "parameters": {
+        "content": "## Sync · Weekly Summary\nNumbers straight from SQL, no AI: what the sync created, updated, marked as duplicates, and what still waits for a person.",
+        "width": 1440,
+        "height": 110,
+        "color": 7
+      },
+      "id": "00000000-0000-4000-8000-000000000936",
+      "name": "Note 12",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -20,
+        -250
+      ]
+    }
+  ],
+  "connections": {
+    "Build Summary": {
+      "main": [
+        [
+          {
+            "node": "Log · summary_built",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Send Summary Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Weekly Schedule": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Manual Trigger (webhook)": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "Prepare",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare": {
+      "main": [
+        [
+          {
+            "node": "Valid Request?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Valid Request?": {
+      "main": [
+        [
+          {
+            "node": "Weekly Stats",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Rejected",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Weekly Stats": {
+      "main": [
+        [
+          {
+            "node": "Build Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Summary Email": {
+      "main": [
+        [
+          {
+            "node": "Final Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/Bogota",
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all",
+    "saveManualExecutions": true,
+    "saveExecutionProgress": true,
+    "errorWorkflow": "errhandler000001"
+  },
+  "active": false,
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": false
+  }
+}

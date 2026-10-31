@@ -38,6 +38,9 @@ WORKFLOWS = [
     ("14-qualifier-stale-queue", "qualifierstale01", "qualifier-stale.json", 2),
     ("15-support-kb-ingest", "supportkbingest1", "support-kb-ingest.json", 2),
     ("16-support-ticket-agent", "supportticket001", "support-ticket.json", 5),
+    ("17-sync-run", "syncrun00000001", "sync-run.json", 4),
+    ("18-sync-conflict-review", "syncreview000001", "sync-review.json", 3),
+    ("19-sync-weekly-summary", "syncweekly00001", "sync-weekly.json", 1),
 ]
 
 
@@ -160,7 +163,8 @@ def capture():
         page.wait_for_timeout(1500)
         if "/signin" in page.url:
             raise SystemExit("Not logged in: run `python scripts/capture-n8n.py login` first.")
-        for slug, wf_id, json_name, tiles in WORKFLOWS:
+        only = sys.argv[2:]   # optional: slug prefixes, e.g. `capture 17 18 19`
+        for slug, wf_id, json_name, tiles in [w for w in WORKFLOWS if not only or any(w[0].startswith(o) for o in only)]:
             wf = capture_canvas(page, slug, wf_id, json_name, tiles)
             capture_execution(page, slug, wf_id, wf, min(tiles, 3))
         ctx.close()

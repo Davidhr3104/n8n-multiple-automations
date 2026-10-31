@@ -1,0 +1,820 @@
+{
+  "id": "syncreview000001",
+  "name": "Sync · Conflict Review (Auditable)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "sync-review",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "00000000-0000-4000-8000-000000000894",
+      "name": "Review Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        100
+      ],
+      "webhookId": "00000000-0000-4000-8000-000000000893",
+      "notes": "La persona llega aquí desde el link del email (?review=…&token=…). Sin token válido y vigente no se muestra nada."
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "{\n  \"config\": {\n    \"mode\": \"mock\",\n    \"defaultCountry\": \"57\",\n    \"nameThreshold\": 0.5,\n    \"lockSeconds\": 300,\n    \"internalToken\": \"local-dev-token\",\n    \"reviewUrl\": \"http://localhost:5678/webhook/sync-review\",\n    \"reviewSubmitUrl\": \"/webhook/sync-review-submit\",\n    \"ownerEmail\": \"ops-lead@example.com\",\n    \"fromEmail\": \"sync@demo.example\",\n    \"dataLabel\": \"TEST DATA · synthetic contacts (mock CRM and sheet)\"\n  }\n}",
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "00000000-0000-4000-8000-000000000895",
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        240,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const item = $input.item.json;\nconst q = item.query || {};\nconst ok = v => typeof v === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(v);\nreturn { json: { review: ok(q.review) ? q.review : '', token: ok(q.token) ? q.token : '', config: item.config } };"
+      },
+      "id": "00000000-0000-4000-8000-000000000896",
+      "name": "Parse Query",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "00000000-0000-4000-8000-000000000897",
+              "leftValue": "={{ !!$json.review && !!$json.token }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "00000000-0000-4000-8000-000000000898",
+      "name": "Query Valid?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        720,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const { renderMessagePage } = (() => {\n  const module = { exports: {} };\n// Revisión por lead: la página que muestra los borradores REALES (ya generados) y la lógica que procesa lo que el dueño decide.\n// Todo dato de CRM/lead es no confiable: se escapa SIEMPRE. Si algo es ambiguo, se salta (falla cerrado).\nconst esc = v => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\"/g, '&quot;').replace(/'/g, '&#39;');\n\n// Estilos compartidos (sistema de diseño: panel denso, azul + acento ámbar, foco visible, sin fuentes ni scripts externos).\nconst BASE_CSS = `\n:root{--bg:#f8fafc;--surface:#fff;--fg:#0f172a;--muted:#475569;--border:#cbd5e1;--primary:#1e40af;--on-primary:#fff;--accent:#b45309;--accent-bg:#fef3c7;--ok:#166534;--ok-bg:#dcfce7;--bad:#b91c1c;--bad-bg:#fee2e2;--ring:#1e40af;--radius:10px}\n@media (prefers-color-scheme:dark){:root{--bg:#0b1220;--surface:#111a2e;--fg:#e2e8f0;--muted:#94a3b8;--border:#2a3a5c;--primary:#60a5fa;--on-primary:#0b1220;--accent:#fbbf24;--accent-bg:#3a2a07;--ok:#86efac;--ok-bg:#0f2f1b;--bad:#fca5a5;--bad-bg:#3b1313;--ring:#93c5fd}}\n*{box-sizing:border-box}html{-webkit-text-size-adjust:100%}\nbody{margin:0;background:var(--bg);color:var(--fg);font:16px/1.5 ui-sans-serif,system-ui,\"Segoe UI\",Roboto,Helvetica,Arial,sans-serif}\na{color:var(--primary)}\n.skip{position:absolute;left:-999px;top:8px;background:var(--primary);color:var(--on-primary);padding:8px 12px;border-radius:6px;z-index:10}.skip:focus{left:8px}\n:focus-visible{outline:3px solid var(--ring);outline-offset:2px}\nheader.top{border-bottom:1px solid var(--border);background:var(--surface)}\n.wrap{max-width:960px;margin:0 auto;padding:16px}\nh1{font-size:1.4rem;line-height:1.25;margin:0 0 4px}h2{font-size:1.05rem;margin:0}\n.sub{color:var(--muted);margin:0;font-size:.95rem}\n.banner{display:inline-block;background:var(--accent-bg);color:var(--accent);border:1px solid var(--accent);border-radius:999px;padding:2px 10px;font-size:.8rem;font-weight:700;letter-spacing:.04em}\n.mono{font-family:ui-monospace,Consolas,\"Cascadia Mono\",monospace;font-size:.85rem}\n.chips{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0}\n.chip{border:1px solid var(--border);background:var(--surface);border-radius:999px;padding:2px 12px;font-size:.9rem}\n.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;margin:12px 0}\n.card.muted{opacity:.92;border-style:dashed}\n.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between}\n.pill{display:inline-block;border-radius:999px;padding:1px 10px;font-size:.8rem;font-weight:700}\n.pill.ok{background:var(--ok-bg);color:var(--ok)}.pill.bad{background:var(--bad-bg);color:var(--bad)}.pill.warn{background:var(--accent-bg);color:var(--accent)}\nlabel{display:block;font-weight:600;margin:10px 0 4px;font-size:.92rem}\ntextarea{width:100%;min-height:96px;padding:10px;border:1px solid var(--border);border-radius:8px;background:var(--bg);color:var(--fg);font:inherit;resize:vertical}\nfieldset{border:0;padding:0;margin:10px 0 0;display:flex;gap:10px;flex-wrap:wrap}\nlegend{position:absolute;left:-999px}\n.choice{display:inline-flex;align-items:center;gap:8px;min-height:44px;padding:0 16px;border:1px solid var(--border);border-radius:8px;cursor:pointer;background:var(--surface);margin:0;font-weight:600}\n.choice input{width:18px;height:18px;accent-color:var(--primary);cursor:pointer}\n.choice:has(input:checked){border-color:var(--primary);box-shadow:inset 0 0 0 1px var(--primary)}\n.note{color:var(--muted);font-size:.88rem;margin:6px 0 0}\nbutton.primary{min-height:48px;padding:0 24px;border:0;border-radius:8px;background:var(--primary);color:var(--on-primary);font:inherit;font-weight:700;cursor:pointer;transition:filter .15s}\nbutton.primary:hover{filter:brightness(1.1)}\n.bar{position:sticky;bottom:0;background:var(--surface);border-top:1px solid var(--border);padding:12px 16px}\n@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}\n`;\n\nconst page = (title, body) => `<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><meta name=\"robots\" content=\"noindex\"><title>${esc(title)}</title><style>${BASE_CSS}</style></head><body>${body}</body></html>`;\n\nfunction renderReviewPage(ctx) {\n  const { batch, drafts, submitUrl, dataLabel } = ctx;\n  const ready = drafts.filter(d => d.status === 'pending_review');\n  const blocked = drafts.filter(d => d.status === 'blocked');\n  const failed = drafts.filter(d => d.status === 'failed');\n\n  const card = d => {\n    const head = `<div class=\"row\"><div><h2>${esc(d.contact_name)}</h2><p class=\"sub\">${esc(d.email || '')}${d.company ? ' · ' + esc(d.company) : ''}</p></div>\n      <div><span class=\"pill warn\">Touch ${esc(d.touch)} · ${d.kind === 'follow_up' ? 'follow-up' : 'new'}</span></div></div>`;\n    if (d.status !== 'pending_review') {\n      return `<section class=\"card muted\" aria-label=\"${esc(d.contact_name)} (not sent)\">${head}\n        <p class=\"note\"><span class=\"pill bad\">${d.status === 'failed' ? 'Failed' : 'Blocked'}</span> ${esc(d.blocked_reason || 'no reason recorded')}. This contact will not be messaged in this batch.</p></section>`;\n    }\n    return `<section class=\"card\" aria-label=\"${esc(d.contact_name)}\">${head}\n      <label for=\"b_${esc(d.id)}\">Message to send (edit if you want)</label>\n      <textarea id=\"b_${esc(d.id)}\" name=\"b_${esc(d.id)}\" rows=\"4\">${esc(d.body_core)}</textarea>\n      <p class=\"note\">An opt-out line is added automatically. Links and price promises are not allowed. ${esc(d.send_note || '')}</p>\n      <fieldset><legend>Decision for ${esc(d.contact_name)}</legend>\n        <label class=\"choice\"><input type=\"radio\" name=\"d_${esc(d.id)}\" value=\"send\" checked> Send</label>\n        <label class=\"choice\"><input type=\"radio\" name=\"d_${esc(d.id)}\" value=\"skip\"> Skip</label>\n      </fieldset></section>`;\n  };\n\n  const body = `<a class=\"skip\" href=\"#review\">Skip to review</a>\n<header class=\"top\"><div class=\"wrap\">\n  <div class=\"row\"><h1>Review revival batch</h1>${dataLabel ? `<span class=\"banner\">${esc(dataLabel)}</span>` : ''}</div>\n  <p class=\"sub\">Batch <span class=\"mono\">${esc(batch.batch_id)}</span> · expires ${esc(batch.expires_at)}. Nothing is sent until you submit. Anything you skip, or leave unclear, is not sent.</p>\n  <div class=\"chips\" role=\"list\"><span class=\"chip\" role=\"listitem\">${ready.length} ready</span><span class=\"chip\" role=\"listitem\">${blocked.length + failed.length} blocked or failed</span><span class=\"chip\" role=\"listitem\">${drafts.length} total</span></div>\n</div></header>\n<main id=\"review\" class=\"wrap\">\n  ${ready.length ? `<form method=\"post\" action=\"${esc(submitUrl)}\"><input type=\"hidden\" name=\"batch\" value=\"${esc(batch.batch_id)}\"><input type=\"hidden\" name=\"token\" value=\"${esc(batch.token)}\">\n    ${drafts.map(card).join('')}\n    <div class=\"bar\"><div class=\"wrap row\"><span class=\"note\">${ready.length} message${ready.length === 1 ? '' : 's'} to decide.</span><button class=\"primary\" type=\"submit\">Submit decisions</button></div></div></form>`\n    : `${drafts.map(card).join('')}<p class=\"card\">There is nothing to send in this batch.</p>`}\n</main>`;\n  return page('Review revival batch', body);\n}\n\n// form: body del POST (claves d_<id> y b_<id>). Devuelve una decisión por cada borrador PENDIENTE del lote; nada más.\nfunction applyReview(drafts, form, finalize) {\n  const decisions = [];\n  const summary = { approved: 0, skipped: 0, edited: 0, rejected_edits: [] };\n  for (const d of drafts.filter(x => x.status === 'pending_review')) {\n    const wantsSend = form[`d_${d.id}`] === 'send';\n    const raw = form[`b_${d.id}`];\n    const core = (typeof raw === 'string' ? raw.replace(/\\r\\n?/g, '\\n').trim() : String(d.body_core || '').trim());\n    const skip = (reason) => { decisions.push({ id: d.id, status: 'skipped', body_core: d.body_core, body: d.body || null, edited: false, reason }); summary.skipped++; };\n\n    if (!wantsSend) { skip('owner_skipped'); continue; }\n    if (!core) { skip('empty_message'); continue; }\n    if (core.length > 2000) { summary.rejected_edits.push({ id: d.id, name: d.contact_name, reason: 'edit_rejected:too_long' }); skip('edit_rejected:too_long'); continue; }\n    const f = finalize(core);\n    if (!f.ok) { const reason = `edit_rejected:${f.issues.join(',')}`; summary.rejected_edits.push({ id: d.id, name: d.contact_name, reason }); skip(reason); continue; }\n    const edited = core !== String(d.body_core || '').trim();\n    decisions.push({ id: d.id, status: 'approved', body_core: core, body: f.text, edited, reason: null });\n    summary.approved++;\n    if (edited) summary.edited++;\n  }\n  return { decisions, summary };\n}\n\nfunction renderResultPage(summary, dataLabel) {\n  const rej = summary.rejected_edits || [];\n  const body = `<a class=\"skip\" href=\"#main\">Skip to content</a>\n<header class=\"top\"><div class=\"wrap\"><div class=\"row\"><h1>Decisions recorded</h1>${dataLabel ? `<span class=\"banner\">${esc(dataLabel)}</span>` : ''}</div>\n<p class=\"sub\">The approved messages are being sent now, inside each contact's local sending hours.</p></div></header>\n<main id=\"main\" class=\"wrap\">\n  <div class=\"chips\"><span class=\"chip\"><span class=\"pill ok\">${esc(summary.approved)}</span> approved</span><span class=\"chip\">${esc(summary.edited)} edited</span><span class=\"chip\">${esc(summary.skipped)} skipped</span></div>\n  ${rej.length ? `<div class=\"card\"><h2>Edits that were not accepted</h2><p class=\"note\">These messages were skipped because the edited text broke a safety rule (links, price or guarantee promises, or length).</p><ul>${rej.map(r => `<li>${esc(r.name)} — <span class=\"mono\">${esc(r.reason)}</span></li>`).join('')}</ul></div>` : ''}\n  <p class=\"note\">You can close this page.</p>\n</main>`;\n  return page('Decisions recorded', body);\n}\n\nfunction renderMessagePage({ title, message }) {\n  return page(title, `<main class=\"wrap\"><div class=\"card\"><h1>${esc(title)}</h1><p>${esc(message)}</p></div></main>`);\n}\n\nmodule.exports = { esc, BASE_CSS, page, renderReviewPage, applyReview, renderResultPage, renderMessagePage };\n\n  return module.exports;\n})();\n\nreturn { json: { html: renderMessagePage({ title: 'Link not valid', message: 'This review link is missing information. Open the link from the email again.' }), http_status: 400 } };"
+      },
+      "id": "00000000-0000-4000-8000-000000000899",
+      "name": "Render Invalid",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        960,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT r.review_id, r.token, (r.expires_at < now()) AS expired,\n  COALESCE((SELECT jsonb_agg(to_jsonb(c) ORDER BY c.id) FROM (\n    SELECT id, crm_id, sheet_id, field, crm_value, sheet_value, base_value, crm_updated_at, sheet_updated_at FROM sync_conflicts WHERE status = 'open') c), '[]'::jsonb) AS conflicts\nFROM sync_reviews r WHERE r.review_id = $1 AND r.token = $2",
+        "options": {
+          "queryReplacement": "={{ [$json.review, $json.token] }}"
+        }
+      },
+      "id": "00000000-0000-4000-8000-000000000900",
+      "name": "Load Conflicts",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        960,
+        100
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "postgresLocal01",
+          "name": "Postgres local (automations)"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000,
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const __libs = {};\nconst { renderMessagePage } = (() => {\n  const module = { exports: {} };\n// Revisión por lead: la página que muestra los borradores REALES (ya generados) y la lógica que procesa lo que el dueño decide.\n// Todo dato de CRM/lead es no confiable: se escapa SIEMPRE. Si algo es ambiguo, se salta (falla cerrado).\nconst esc = v => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\"/g, '&quot;').replace(/'/g, '&#39;');\n\n// Estilos compartidos (sistema de diseño: panel denso, azul + acento ámbar, foco visible, sin fuentes ni scripts externos).\nconst BASE_CSS = `\n:root{--bg:#f8fafc;--surface:#fff;--fg:#0f172a;--muted:#475569;--border:#cbd5e1;--primary:#1e40af;--on-primary:#fff;--accent:#b45309;--accent-bg:#fef3c7;--ok:#166534;--ok-bg:#dcfce7;--bad:#b91c1c;--bad-bg:#fee2e2;--ring:#1e40af;--radius:10px}\n@media (prefers-color-scheme:dark){:root{--bg:#0b1220;--surface:#111a2e;--fg:#e2e8f0;--muted:#94a3b8;--border:#2a3a5c;--primary:#60a5fa;--on-primary:#0b1220;--accent:#fbbf24;--accent-bg:#3a2a07;--ok:#86efac;--ok-bg:#0f2f1b;--bad:#fca5a5;--bad-bg:#3b1313;--ring:#93c5fd}}\n*{box-sizing:border-box}html{-webkit-text-size-adjust:100%}\nbody{margin:0;background:var(--bg);color:var(--fg);font:16px/1.5 ui-sans-serif,system-ui,\"Segoe UI\",Roboto,Helvetica,Arial,sans-serif}\na{color:var(--primary)}\n.skip{position:absolute;left:-999px;top:8px;background:var(--primary);color:var(--on-primary);padding:8px 12px;border-radius:6px;z-index:10}.skip:focus{left:8px}\n:focus-visible{outline:3px solid var(--ring);outline-offset:2px}\nheader.top{border-bottom:1px solid var(--border);background:var(--surface)}\n.wrap{max-width:960px;margin:0 auto;padding:16px}\nh1{font-size:1.4rem;line-height:1.25;margin:0 0 4px}h2{font-size:1.05rem;margin:0}\n.sub{color:var(--muted);margin:0;font-size:.95rem}\n.banner{display:inline-block;background:var(--accent-bg);color:var(--accent);border:1px solid var(--accent);border-radius:999px;padding:2px 10px;font-size:.8rem;font-weight:700;letter-spacing:.04em}\n.mono{font-family:ui-monospace,Consolas,\"Cascadia Mono\",monospace;font-size:.85rem}\n.chips{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0}\n.chip{border:1px solid var(--border);background:var(--surface);border-radius:999px;padding:2px 12px;font-size:.9rem}\n.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;margin:12px 0}\n.card.muted{opacity:.92;border-style:dashed}\n.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between}\n.pill{display:inline-block;border-radius:999px;padding:1px 10px;font-size:.8rem;font-weight:700}\n.pill.ok{background:var(--ok-bg);color:var(--ok)}.pill.bad{background:var(--bad-bg);color:var(--bad)}.pill.warn{background:var(--accent-bg);color:var(--accent)}\nlabel{display:block;font-weight:600;margin:10px 0 4px;font-size:.92rem}\ntextarea{width:100%;min-height:96px;padding:10px;border:1px solid var(--border);border-radius:8px;background:var(--bg);color:var(--fg);font:inherit;resize:vertical}\nfieldset{border:0;padding:0;margin:10px 0 0;display:flex;gap:10px;flex-wrap:wrap}\nlegend{position:absolute;left:-999px}\n.choice{display:inline-flex;align-items:center;gap:8px;min-height:44px;padding:0 16px;border:1px solid var(--border);border-radius:8px;cursor:pointer;background:var(--surface);margin:0;font-weight:600}\n.choice input{width:18px;height:18px;accent-color:var(--primary);cursor:pointer}\n.choice:has(input:checked){border-color:var(--primary);box-shadow:inset 0 0 0 1px var(--primary)}\n.note{color:var(--muted);font-size:.88rem;margin:6px 0 0}\nbutton.primary{min-height:48px;padding:0 24px;border:0;border-radius:8px;background:var(--primary);color:var(--on-primary);font:inherit;font-weight:700;cursor:pointer;transition:filter .15s}\nbutton.primary:hover{filter:brightness(1.1)}\n.bar{position:sticky;bottom:0;background:var(--surface);border-top:1px solid var(--border);padding:12px 16px}\n@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}\n`;\n\nconst page = (title, body) => `<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><meta name=\"robots\" content=\"noindex\"><title>${esc(title)}</title><style>${BASE_CSS}</style></head><body>${body}</body></html>`;\n\nfunction renderReviewPage(ctx) {\n  const { batch, drafts, submitUrl, dataLabel } = ctx;\n  const ready = drafts.filter(d => d.status === 'pending_review');\n  const blocked = drafts.filter(d => d.status === 'blocked');\n  const failed = drafts.filter(d => d.status === 'failed');\n\n  const card = d => {\n    const head = `<div class=\"row\"><div><h2>${esc(d.contact_name)}</h2><p class=\"sub\">${esc(d.email || '')}${d.company ? ' · ' + esc(d.company) : ''}</p></div>\n      <div><span class=\"pill warn\">Touch ${esc(d.touch)} · ${d.kind === 'follow_up' ? 'follow-up' : 'new'}</span></div></div>`;\n    if (d.status !== 'pending_review') {\n      return `<section class=\"card muted\" aria-label=\"${esc(d.contact_name)} (not sent)\">${head}\n        <p class=\"note\"><span class=\"pill bad\">${d.status === 'failed' ? 'Failed' : 'Blocked'}</span> ${esc(d.blocked_reason || 'no reason recorded')}. This contact will not be messaged in this batch.</p></section>`;\n    }\n    return `<section class=\"card\" aria-label=\"${esc(d.contact_name)}\">${head}\n      <label for=\"b_${esc(d.id)}\">Message to send (edit if you want)</label>\n      <textarea id=\"b_${esc(d.id)}\" name=\"b_${esc(d.id)}\" rows=\"4\">${esc(d.body_core)}</textarea>\n      <p class=\"note\">An opt-out line is added automatically. Links and price promises are not allowed. ${esc(d.send_note || '')}</p>\n      <fieldset><legend>Decision for ${esc(d.contact_name)}</legend>\n        <label class=\"choice\"><input type=\"radio\" name=\"d_${esc(d.id)}\" value=\"send\" checked> Send</label>\n        <label class=\"choice\"><input type=\"radio\" name=\"d_${esc(d.id)}\" value=\"skip\"> Skip</label>\n      </fieldset></section>`;\n  };\n\n  const body = `<a class=\"skip\" href=\"#review\">Skip to review</a>\n<header class=\"top\"><div class=\"wrap\">\n  <div class=\"row\"><h1>Review revival batch</h1>${dataLabel ? `<span class=\"banner\">${esc(dataLabel)}</span>` : ''}</div>\n  <p class=\"sub\">Batch <span class=\"mono\">${esc(batch.batch_id)}</span> · expires ${esc(batch.expires_at)}. Nothing is sent until you submit. Anything you skip, or leave unclear, is not sent.</p>\n  <div class=\"chips\" role=\"list\"><span class=\"chip\" role=\"listitem\">${ready.length} ready</span><span class=\"chip\" role=\"listitem\">${blocked.length + failed.length} blocked or failed</span><span class=\"chip\" role=\"listitem\">${drafts.length} total</span></div>\n</div></header>\n<main id=\"review\" class=\"wrap\">\n  ${ready.length ? `<form method=\"post\" action=\"${esc(submitUrl)}\"><input type=\"hidden\" name=\"batch\" value=\"${esc(batch.batch_id)}\"><input type=\"hidden\" name=\"token\" value=\"${esc(batch.token)}\">\n    ${drafts.map(card).join('')}\n    <div class=\"bar\"><div class=\"wrap row\"><span class=\"note\">${ready.length} message${ready.length === 1 ? '' : 's'} to decide.</span><button class=\"primary\" type=\"submit\">Submit decisions</button></div></div></form>`\n    : `${drafts.map(card).join('')}<p class=\"card\">There is nothing to send in this batch.</p>`}\n</main>`;\n  return page('Review revival batch', body);\n}\n\n// form: body del POST (claves d_<id> y b_<id>). Devuelve una decisión por cada borrador PENDIENTE del lote; nada más.\nfunction applyReview(drafts, form, finalize) {\n  const decisions = [];\n  const summary = { approved: 0, skipped: 0, edited: 0, rejected_edits: [] };\n  for (const d of drafts.filter(x => x.status === 'pending_review')) {\n    const wantsSend = form[`d_${d.id}`] === 'send';\n    const raw = form[`b_${d.id}`];\n    const core = (typeof raw === 'string' ? raw.replace(/\\r\\n?/g, '\\n').trim() : String(d.body_core || '').trim());\n    const skip = (reason) => { decisions.push({ id: d.id, status: 'skipped', body_core: d.body_core, body: d.body || null, edited: false, reason }); summary.skipped++; };\n\n    if (!wantsSend) { skip('owner_skipped'); continue; }\n    if (!core) { skip('empty_message'); continue; }\n    if (core.length > 2000) { summary.rejected_edits.push({ id: d.id, name: d.contact_name, reason: 'edit_rejected:too_long' }); skip('edit_rejected:too_long'); continue; }\n    const f = finalize(core);\n    if (!f.ok) { const reason = `edit_rejected:${f.issues.join(',')}`; summary.rejected_edits.push({ id: d.id, name: d.contact_name, reason }); skip(reason); continue; }\n    const edited = core !== String(d.body_core || '').trim();\n    decisions.push({ id: d.id, status: 'approved', body_core: core, body: f.text, edited, reason: null });\n    summary.approved++;\n    if (edited) summary.edited++;\n  }\n  return { decisions, summary };\n}\n\nfunction renderResultPage(summary, dataLabel) {\n  const rej = summary.rejected_edits || [];\n  const body = `<a class=\"skip\" href=\"#main\">Skip to content</a>\n<header class=\"top\"><div class=\"wrap\"><div class=\"row\"><h1>Decisions recorded</h1>${dataLabel ? `<span class=\"banner\">${esc(dataLabel)}</span>` : ''}</div>\n<p class=\"sub\">The approved messages are being sent now, inside each contact's local sending hours.</p></div></header>\n<main id=\"main\" class=\"wrap\">\n  <div class=\"chips\"><span class=\"chip\"><span class=\"pill ok\">${esc(summary.approved)}</span> approved</span><span class=\"chip\">${esc(summary.edited)} edited</span><span class=\"chip\">${esc(summary.skipped)} skipped</span></div>\n  ${rej.length ? `<div class=\"card\"><h2>Edits that were not accepted</h2><p class=\"note\">These messages were skipped because the edited text broke a safety rule (links, price or guarantee promises, or length).</p><ul>${rej.map(r => `<li>${esc(r.name)} — <span class=\"mono\">${esc(r.reason)}</span></li>`).join('')}</ul></div>` : ''}\n  <p class=\"note\">You can close this page.</p>\n</main>`;\n  return page('Decisions recorded', body);\n}\n\nfunction renderMessagePage({ title, message }) {\n  return page(title, `<main class=\"wrap\"><div class=\"card\"><h1>${esc(title)}</h1><p>${esc(message)}</p></div></main>`);\n}\n\nmodule.exports = { esc, BASE_CSS, page, renderReviewPage, applyReview, renderResultPage, renderMessagePage };\n\n  __libs['review'] = module.exports;\n  return module.exports;\n})();\nconst {  } = (() => {\n  const module = { exports: {} };\n// CRM ↔ Sheets Sync: lógica 100 % determinística (sin IA). Planifica; no escribe nada.\r\n// Reglas: nunca se borra ni se propaga un borrado; un cambio en un solo lado se copia; un cambio distinto en los DOS lados es un\r\n// conflicto y no se toca ninguno; los casos dudosos (mismo teléfono, nombres distintos) se reportan y NO se fusionan.\r\nconst FIELDS = ['name', 'email', 'phone', 'company', 'stage'];\r\n\r\nconst fold = s => String(s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\\s+/g, ' ').trim();\r\n\r\nfunction normEmail(v) {\r\n  const e = String(v ?? '').trim().toLowerCase();\r\n  return /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(e) ? e : '';\r\n}\r\n\r\n// Misma regla que norm_phone() en SQL: menos de 8 dígitos = no es un teléfono.\r\nfunction normPhone(v, cc = '57') {\r\n  const s = String(v ?? '').trim();\r\n  const d = s.replace(/[^0-9]/g, '');\r\n  if (d.length < 8) return '';\r\n  if (s.startsWith('+') || d.length >= 11) return '+' + d;\r\n  return '+' + cc + d;\r\n}\r\n\r\n// Similitud de nombres: Jaccard de palabras, ignorando mayúsculas y tildes. Vacío = 0.\r\nfunction nameSimilarity(a, b) {\r\n  const ta = new Set(fold(a).split(' ').filter(Boolean));\r\n  const tb = new Set(fold(b).split(' ').filter(Boolean));\r\n  if (!ta.size || !tb.size) return 0;\r\n  let inter = 0;\r\n  for (const t of ta) if (tb.has(t)) inter++;\r\n  return inter / (ta.size + tb.size - inter);\r\n}\r\n\r\n// Forma canónica para COMPARAR (nunca para mostrar): evita falsos conflictos por mayúsculas, espacios o formato de teléfono.\r\nconst canon = (field, v, cc) => field === 'email' ? normEmail(v) : field === 'phone' ? normPhone(v, cc) : fold(v);\r\n// Forma para ESCRIBIR en el otro sistema.\r\nconst outValue = (field, v, cc) => field === 'email' ? normEmail(v) : field === 'phone' ? normPhone(v, cc) : String(v ?? '').replace(/\\s+/g, ' ').trim();\r\n\r\nconst createdId = (side, fromId) => (side === 'crm' ? 'crm-from-' : 'row-from-') + fromId;\r\n\r\nfunction planSync({ crm = [], sheet = [], links = [], defaultCountry = '57', nameThreshold = 0.5 } = {}) {\r\n  const cc = defaultCountry;\r\n  const plan = {\r\n    creates: { crm: [], sheet: [] },\r\n    updates: { crm: [], sheet: [] },\r\n    new_links: [],\r\n    base_updates: [],\r\n    duplicates: [],\r\n    conflicts: [],\r\n    issues: [],\r\n    changes: [],\r\n    stats: {},\r\n  };\r\n  const seenKeys = new Set();\r\n  // Una incidencia por clave: la misma pareja puede detectarse desde ambos lados.\r\n  const issue = (kind, key, detail) => { if (seenKeys.has(key)) return; seenKeys.add(key); plan.issues.push({ kind, key, detail }); };\r\n  const keyOf = (...p) => p.join(':');\r\n  const pairKey = (kind, side, a, b) => keyOf(kind, side, ...[a, b].sort());\r\n\r\n  const prep = (side, rows) => {\r\n    const ok = [];\r\n    for (const r of [...rows].sort((a, b) => String(a.id).localeCompare(String(b.id)))) {\r\n      const n = { ...r, id: String(r.id), _email: normEmail(r.email), _phone: normPhone(r.phone, cc) };\r\n      if (!n._email && !n._phone) { issue('invalid_record', keyOf('invalid', side, n.id), { side, id: n.id, reason: 'no_valid_email_or_phone' }); continue; }\r\n      ok.push(n);\r\n    }\r\n    return ok;\r\n  };\r\n\r\n  const linkedCrm = new Set(links.map(l => String(l.crm_id)));\r\n  const linkedSheet = new Set(links.map(l => String(l.sheet_id)));\r\n\r\n  // ── 1) Duplicados dentro de un mismo lado ──\r\n  const dedupe = (side, rows, linkedSet) => {\r\n    const parent = new Map(rows.map(r => [r.id, r.id]));\r\n    const find = x => { while (parent.get(x) !== x) { parent.set(x, parent.get(parent.get(x))); x = parent.get(x); } return x; };\r\n    const union = (a, b) => { const ra = find(a), rb = find(b); if (ra !== rb) parent.set(rb, ra); };\r\n    const reason = new Map();\r\n    for (let i = 0; i < rows.length; i++) for (let j = i + 1; j < rows.length; j++) {\r\n      const a = rows[i], b = rows[j];\r\n      if (a._email && a._email === b._email) { union(a.id, b.id); reason.set(b.id, 'same_email'); }\r\n      else if (a._phone && a._phone === b._phone) {\r\n        if (nameSimilarity(a.name, b.name) >= nameThreshold) { union(a.id, b.id); reason.set(b.id, 'same_phone_similar_name'); }\r\n        else issue('possible_duplicate', pairKey('dup', side, a.id, b.id), { side, ids: [a.id, b.id], reason: 'same_phone_different_name' });\r\n      }\r\n    }\r\n    const groups = new Map();\r\n    for (const r of rows) { const g = find(r.id); groups.set(g, [...(groups.get(g) || []), r]); }\r\n    const active = [];\r\n    for (const members of groups.values()) {\r\n      if (members.length === 1) { active.push(members[0]); continue; }\r\n      const linked = members.filter(m => linkedSet.has(m.id));\r\n      if (linked.length > 1) {\r\n        issue('possible_duplicate', keyOf('dup-linked', side, ...members.map(m => m.id).sort()), { side, ids: members.map(m => m.id), reason: 'several_linked_records' });\r\n        active.push(...members);\r\n        continue;\r\n      }\r\n      const canonical = linked[0] || members[0];\r\n      active.push(canonical);\r\n      for (const m of members) if (m !== canonical) plan.duplicates.push({ side, id: m.id, canonical: canonical.id, reason: reason.get(m.id) || 'same_email' });\r\n    }\r\n    return active;\r\n  };\r\n\r\n  const crmA = dedupe('crm', prep('crm', crm), linkedCrm);\r\n  const sheetA = dedupe('sheet', prep('sheet', sheet), linkedSheet);\r\n  const crmById = new Map(crmA.map(r => [r.id, r]));\r\n  const sheetById = new Map(sheetA.map(r => [r.id, r]));\r\n\r\n  // ── 2) Pares ya vinculados: fusión de tres vías contra el último valor sincronizado ──\r\n  const mergePair = (c, s, base, upd, linkRef) => {\r\n    const newBase = { ...base };\r\n    const toSheet = {}, toCrm = {};\r\n    for (const f of FIELDS) {\r\n      const cv = canon(f, c[f], cc), sv = canon(f, s[f], cc), bv = base[f] ?? '';\r\n      if (cv === sv) { newBase[f] = cv; continue; }\r\n      const crmChanged = cv !== bv, sheetChanged = sv !== bv;\r\n      if (crmChanged && sheetChanged) {\r\n        plan.conflicts.push({ crm_id: c.id, sheet_id: s.id, field: f, crm_value: String(c[f] ?? ''), sheet_value: String(s[f] ?? ''), base_value: bv, crm_updated_at: c.updated_at ?? null, sheet_updated_at: s.updated_at ?? null });\r\n      } else if (crmChanged) {\r\n        if (cv === '') issue('blank_ignored', keyOf('blank', linkRef, f, 'crm'), { field: f, crm_id: c.id, sheet_id: s.id, side: 'crm' });\r\n        else { toSheet[f] = outValue(f, c[f], cc); newBase[f] = cv; }\r\n      } else if (sheetChanged) {\r\n        if (sv === '') issue('blank_ignored', keyOf('blank', linkRef, f, 'sheet'), { field: f, crm_id: c.id, sheet_id: s.id, side: 'sheet' });\r\n        else { toCrm[f] = outValue(f, s[f], cc); newBase[f] = sv; }\r\n      }\r\n    }\r\n    if (Object.keys(toSheet).length) {\r\n      plan.updates.sheet.push({ id: s.id, fields: toSheet, expected_updated_at: s.updated_at ?? null });\r\n      for (const [f, v] of Object.entries(toSheet)) plan.changes.push({ side: 'sheet', action: 'update', entity_id: s.id, field: f, old_value: String(s[f] ?? ''), new_value: v, source_id: c.id });\r\n    }\r\n    if (Object.keys(toCrm).length) {\r\n      plan.updates.crm.push({ id: c.id, fields: toCrm, expected_updated_at: c.updated_at ?? null });\r\n      for (const [f, v] of Object.entries(toCrm)) plan.changes.push({ side: 'crm', action: 'update', entity_id: c.id, field: f, old_value: String(c[f] ?? ''), new_value: v, source_id: s.id });\r\n    }\r\n    return newBase;\r\n  };\r\n\r\n  for (const l of [...links].sort((a, b) => Number(a.link_id) - Number(b.link_id))) {\r\n    const c = crmById.get(String(l.crm_id)), s = sheetById.get(String(l.sheet_id));\r\n    if (!c || !s) { issue('orphan_link', keyOf('orphan', l.link_id), { link_id: l.link_id, crm_id: l.crm_id, sheet_id: l.sheet_id, missing: !c && !s ? 'both' : !c ? 'crm' : 'sheet' }); continue; }\r\n    const base = l.base || {};\r\n    const newBase = mergePair(c, s, base, null, String(l.link_id));\r\n    if (FIELDS.some(f => (newBase[f] ?? '') !== (base[f] ?? ''))) plan.base_updates.push({ link_id: l.link_id, base: newBase });\r\n  }\r\n\r\n  // ── 3) Registros sin vínculo: emparejar, retener o crear ──\r\n  const freeCrm = crmA.filter(r => !linkedCrm.has(r.id));\r\n  const freeSheet = sheetA.filter(r => !linkedSheet.has(r.id));\r\n  const taken = new Set();\r\n  const pairs = [];\r\n  for (const c of freeCrm) {\r\n    let m = c._email ? freeSheet.find(s => !taken.has(s.id) && s._email === c._email) : null;\r\n    if (!m && c._phone) m = freeSheet.find(s => !taken.has(s.id) && s._phone === c._phone && nameSimilarity(c.name, s.name) >= nameThreshold);\r\n    if (m) { taken.add(m.id); pairs.push([c, m]); }\r\n  }\r\n  const pairedCrm = new Set(pairs.map(p => p[0].id));\r\n  for (const [c, s] of pairs) {\r\n    const base = {};\r\n    for (const f of FIELDS) { const cv = canon(f, c[f], cc), sv = canon(f, s[f], cc); base[f] = cv === sv ? cv : ''; }\r\n    const nb = mergePair(c, s, base, null, `new:${c.id}:${s.id}`);\r\n    plan.new_links.push({ crm_id: c.id, sheet_id: s.id, base: nb, how: c._email && c._email === s._email ? 'email' : 'phone_and_name' });\r\n  }\r\n\r\n  const heldCrm = new Set(), heldSheet = new Set();\r\n  const hold = (c, s, reason) => { heldCrm.add(c.id); heldSheet.add(s.id); issue('possible_duplicate', pairKey('dup-x', 'crm-sheet', c.id, s.id), { crm_id: c.id, sheet_id: s.id, reason }); };\r\n  const looksSame = (a, b) => (a._email && a._email === b._email) || (a._phone && a._phone === b._phone);\r\n  for (const c of freeCrm) {\r\n    if (pairedCrm.has(c.id)) continue;\r\n    for (const s of sheetA) if (looksSame(c, s)) hold(c, s, c._email && c._email === s._email ? 'same_email_other_record_linked' : 'same_phone_different_name');\r\n  }\r\n  for (const s of freeSheet) {\r\n    if (taken.has(s.id)) continue;\r\n    for (const c of crmA) if (looksSame(c, s)) hold(c, s, c._email && c._email === s._email ? 'same_email_other_record_linked' : 'same_phone_different_name');\r\n  }\r\n\r\n  const fieldsOf = r => Object.fromEntries(FIELDS.map(f => [f, outValue(f, r[f], cc)]));\r\n  const baseOf = r => Object.fromEntries(FIELDS.map(f => [f, canon(f, r[f], cc)]));\r\n  for (const c of freeCrm) if (!pairedCrm.has(c.id) && !heldCrm.has(c.id)) {\r\n    plan.creates.sheet.push({ new_id: createdId('sheet', c.id), from_id: c.id, fields: fieldsOf(c), base: baseOf(c) });\r\n    plan.new_links.push({ crm_id: c.id, sheet_id: createdId('sheet', c.id), base: baseOf(c), how: 'created_in_sheet' });\r\n  }\r\n  for (const s of freeSheet) if (!taken.has(s.id) && !heldSheet.has(s.id)) {\r\n    plan.creates.crm.push({ new_id: createdId('crm', s.id), from_id: s.id, fields: fieldsOf(s), base: baseOf(s) });\r\n    plan.new_links.push({ crm_id: createdId('crm', s.id), sheet_id: s.id, base: baseOf(s), how: 'created_in_crm' });\r\n  }\r\n\r\n  for (const c of plan.creates.sheet) plan.changes.push({ side: 'sheet', action: 'create', entity_id: c.new_id, field: null, old_value: null, new_value: JSON.stringify(c.fields), source_id: c.from_id });\r\n  for (const c of plan.creates.crm) plan.changes.push({ side: 'crm', action: 'create', entity_id: c.new_id, field: null, old_value: null, new_value: JSON.stringify(c.fields), source_id: c.from_id });\r\n  for (const d of plan.duplicates) plan.changes.push({ side: d.side, action: 'mark_duplicate', entity_id: d.id, field: 'merged_into', old_value: null, new_value: d.canonical, source_id: d.reason });\r\n\r\n  const n = k => plan.issues.filter(i => i.kind === k).length;\r\n  plan.stats = {\r\n    crm_records: crmA.length, sheet_records: sheetA.length, links: links.length,\r\n    created_in_crm: plan.creates.crm.length, created_in_sheet: plan.creates.sheet.length,\r\n    updated_in_crm: plan.updates.crm.length, updated_in_sheet: plan.updates.sheet.length,\r\n    new_links: plan.new_links.length, duplicates_marked: plan.duplicates.length, conflicts: plan.conflicts.length,\r\n    invalid: n('invalid_record'), possible_duplicates: n('possible_duplicate'), orphan_links: n('orphan_link'), blank_ignored: n('blank_ignored'),\r\n  };\r\n  plan.writes = plan.stats.created_in_crm + plan.stats.created_in_sheet + plan.stats.updated_in_crm + plan.stats.updated_in_sheet + plan.base_updates.length + plan.duplicates.length;\r\n  return plan;\r\n}\r\n\r\n// Qué hacer con un conflicto según la decisión de la persona. 'pending' (o cualquier otra cosa) no toca nada: falla cerrado.\r\nfunction resolveChoice(conflict, choice) {\r\n  if (choice === 'crm') return { action: 'copy', write_to: 'sheet', value: outValue(conflict.field, conflict.crm_value), base: canon(conflict.field, conflict.crm_value) };\r\n  if (choice === 'sheet') return { action: 'copy', write_to: 'crm', value: outValue(conflict.field, conflict.sheet_value), base: canon(conflict.field, conflict.sheet_value) };\r\n  return { action: 'none' };\r\n}\r\n\r\nconst FIELD_LABEL = { name: 'Name', email: 'Email', phone: 'Phone', company: 'Company', stage: 'Stage' };\r\nconst KIND_LABEL = { invalid_record: 'Invalid record (no valid email or phone)', possible_duplicate: 'Possible duplicate (not merged)', orphan_link: 'Linked record missing on one side (nothing deleted)', blank_ignored: 'Field cleared on one side (not copied)' };\r\n\r\nfunction describeIssue(i) {\r\n  const d = i.detail || {};\r\n  if (i.kind === 'invalid_record') return `${d.side} ${d.id}: ${d.reason}`;\r\n  if (i.kind === 'possible_duplicate') return d.side ? `${d.side} ${d.ids.join(' & ')}: ${d.reason}` : `crm ${d.crm_id} & sheet ${d.sheet_id}: ${d.reason}`;\r\n  if (i.kind === 'orphan_link') return `link ${d.link_id}: missing on ${d.missing} (crm ${d.crm_id}, sheet ${d.sheet_id})`;\r\n  return `${d.field} cleared on ${d.side} (crm ${d.crm_id}, sheet ${d.sheet_id})`;\r\n}\r\n\r\n// Email de aviso: solo lo NUEVO (incidencias y conflictos recién vistos). Texto plano + HTML escapado.\r\nfunction buildNotice({ stats, newIssues = [], newConflicts = [], reviewLink = null, dataLabel = '' }) {\r\n  const esc = v => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\r\n  const lines = [dataLabel, '', `Sync run: ${stats.created_in_crm + stats.created_in_sheet} created, ${stats.updated_in_crm + stats.updated_in_sheet} updated, ${stats.duplicates_marked} duplicate(s) marked.`, ''];\r\n  if (newConflicts.length) {\r\n    lines.push(`${newConflicts.length} new conflict(s) - both systems changed the same field; nothing was overwritten:`);\r\n    for (const c of newConflicts.slice(0, 20)) lines.push(`  - ${FIELD_LABEL[c.field] || c.field} (crm ${c.crm_id} / sheet ${c.sheet_id}): CRM \"${c.crm_value}\" vs Sheet \"${c.sheet_value}\"`);\r\n    if (reviewLink) lines.push('', `Resolve them here: ${reviewLink}`);\r\n    lines.push('');\r\n  }\r\n  if (newIssues.length) {\r\n    lines.push(`${newIssues.length} new item(s) need a look:`);\r\n    for (const i of newIssues.slice(0, 20)) lines.push(`  - ${KIND_LABEL[i.kind] || i.kind}: ${describeIssue(i)}`);\r\n    lines.push('');\r\n  }\r\n  const html = `<p>${esc(dataLabel)}</p><p>Sync run: <b>${stats.created_in_crm + stats.created_in_sheet}</b> created, <b>${stats.updated_in_crm + stats.updated_in_sheet}</b> updated, <b>${stats.duplicates_marked}</b> duplicate(s) marked.</p>`\r\n    + (newConflicts.length ? `<p><b>${newConflicts.length}</b> new conflict(s): both systems changed the same field and nothing was overwritten.</p><ul>${newConflicts.slice(0, 20).map(c => `<li>${esc(FIELD_LABEL[c.field] || c.field)}: CRM \"${esc(c.crm_value)}\" vs Sheet \"${esc(c.sheet_value)}\"</li>`).join('')}</ul>${reviewLink ? `<p><a href=\"${esc(reviewLink)}\" style=\"display:inline-block;padding:12px 22px;background:#1e40af;color:#ffffff;border-radius:8px;text-decoration:none;font-weight:700\">Resolve conflicts</a></p>` : ''}` : '')\r\n    + (newIssues.length ? `<p><b>${newIssues.length}</b> new item(s) need a look:</p><ul>${newIssues.slice(0, 20).map(i => `<li>${esc(KIND_LABEL[i.kind] || i.kind)}: ${esc(describeIssue(i))}</li>`).join('')}</ul>` : '');\r\n  return { text: lines.join('\\n'), html };\r\n}\r\n\r\nmodule.exports = { FIELDS, FIELD_LABEL, normEmail, normPhone, nameSimilarity, canon, outValue, createdId, planSync, resolveChoice, buildNotice, describeIssue };\r\n\n  __libs['sync'] = module.exports;\n  return module.exports;\n})();\nconst { renderConflictsPage } = (() => {\n  const module = { exports: {} };\n  const require = n => __libs[String(n).replace(/^\\.\\//, '')];\n// Página de revisión de conflictos del Sync y la lógica que procesa lo que la persona decide.\n// Todo dato de CRM/hoja es no confiable: se escapa SIEMPRE. Sin elección clara = pendiente (falla cerrado, no se toca nada).\nconst { esc, page } = require('./review');\nconst { FIELD_LABEL, resolveChoice } = require('./sync');\n\nfunction renderConflictsPage({ review, conflicts, submitUrl, dataLabel }) {\n  const card = c => `<section class=\"card\" aria-label=\"${esc(FIELD_LABEL[c.field] || c.field)} conflict\">\n    <div class=\"row\"><div><h2>${esc(FIELD_LABEL[c.field] || c.field)}</h2><p class=\"sub mono\">CRM ${esc(c.crm_id)} · Sheet ${esc(c.sheet_id)}</p></div><span class=\"pill warn\">both sides changed</span></div>\n    <div class=\"chips\" role=\"list\">\n      <span class=\"chip\" role=\"listitem\"><b>CRM:</b> ${esc(c.crm_value) || '<i>(empty)</i>'}</span>\n      <span class=\"chip\" role=\"listitem\"><b>Sheet:</b> ${esc(c.sheet_value) || '<i>(empty)</i>'}</span>\n      <span class=\"chip\" role=\"listitem\"><b>Last synced:</b> ${esc(c.base_value) || '<i>(empty)</i>'}</span>\n    </div>\n    <fieldset><legend>Decision for ${esc(FIELD_LABEL[c.field] || c.field)} (${esc(c.crm_id)})</legend>\n      <label class=\"choice\"><input type=\"radio\" name=\"c_${esc(c.id)}\" value=\"crm\"> Keep the CRM value</label>\n      <label class=\"choice\"><input type=\"radio\" name=\"c_${esc(c.id)}\" value=\"sheet\"> Keep the Sheet value</label>\n      <label class=\"choice\"><input type=\"radio\" name=\"c_${esc(c.id)}\" value=\"pending\" checked> Decide later</label>\n    </fieldset></section>`;\n  return page('Sync conflicts', `<a class=\"skip\" href=\"#main\">Skip to conflicts</a>\n<header class=\"top\"><div class=\"wrap\"><span class=\"banner\">${esc(dataLabel)}</span><h1>Resolve sync conflicts</h1>\n<p class=\"sub\">Both systems changed the same field. Nothing was overwritten. Pick which value wins; it is copied to the other system. \"Decide later\" leaves it untouched.</p></div></header>\n<main id=\"main\" class=\"wrap\"><form method=\"post\" action=\"${esc(submitUrl)}\">\n<input type=\"hidden\" name=\"review\" value=\"${esc(review.review_id)}\"><input type=\"hidden\" name=\"token\" value=\"${esc(review.token)}\">\n${conflicts.length ? conflicts.map(card).join('') : '<section class=\"card\"><p>No open conflicts. Everything is in sync.</p></section>'}\n${conflicts.length ? '<div class=\"bar\"><button class=\"primary\" type=\"submit\">Apply my choices</button></div>' : ''}\n</form></main>`);\n}\n\n// Convierte el formulario en escrituras. Cada una lleva las guardas (updated_at al detectar) para no pisar una edición posterior.\nfunction buildResolution(conflicts, form) {\n  const writes = [];\n  let pending = 0;\n  for (const c of conflicts) {\n    const choice = form['c_' + c.id];\n    const r = resolveChoice(c, choice);\n    if (r.action !== 'copy') { pending++; continue; }\n    writes.push({ conflict_id: Number(c.id), choice, write_to: r.write_to, field: c.field, value: r.value, base: r.base, crm_id: c.crm_id, sheet_id: c.sheet_id, crm_updated_at: c.crm_updated_at, sheet_updated_at: c.sheet_updated_at });\n  }\n  return { writes, summary: { requested: writes.length, pending } };\n}\n\nfunction renderResolvedPage({ resolved, stale, pending, dataLabel }) {\n  return page('Sync conflicts resolved', `<header class=\"top\"><div class=\"wrap\"><span class=\"banner\">${esc(dataLabel)}</span><h1>Choices applied</h1></div></header>\n<main class=\"wrap\"><section class=\"card\"><p><span class=\"pill ok\">${esc(resolved)} resolved</span> ${stale ? `<span class=\"pill warn\">${esc(stale)} skipped: changed since detection</span>` : ''} <span class=\"pill\">${esc(pending)} left for later</span></p>\n<p class=\"note\">Resolved values were copied to the other system and recorded in the change history. Skipped conflicts stay open: the next sync run re-checks them with the fresh values.</p></section></main>`);\n}\n\nmodule.exports = { renderConflictsPage, buildResolution, renderResolvedPage };\n\n  __libs['syncreview'] = module.exports;\n  return module.exports;\n})();\n\nconst s = $('Parse Query').item.json;\nconst r = $input.item.json;\nif (!r.review_id) return { json: { ...s, html: renderMessagePage({ title: 'Link not valid', message: 'This review link is not valid.' }), http_status: 403, outcome: 'invalid_token' } };\nif (r.expired) return { json: { ...s, html: renderMessagePage({ title: 'Link expired', message: 'This review link expired. The next sync run sends a new one if conflicts are still open.' }), http_status: 410, outcome: 'expired' } };\nconst html = renderConflictsPage({ review: { review_id: r.review_id, token: s.token }, conflicts: r.conflicts, submitUrl: s.config.reviewSubmitUrl, dataLabel: s.config.dataLabel });\nreturn { json: { ...s, html, http_status: 200, outcome: 'shown', conflicts_count: r.conflicts.length } };"
+      },
+      "id": "00000000-0000-4000-8000-000000000901",
+      "name": "Render Conflicts",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1200,
+        100
+      ],
+      "notes": "Todo dato del CRM o la hoja se escapa en el render."
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{ $json.html }}",
+        "options": {
+          "responseCode": "={{ $json.http_status || 200 }}",
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "text/html; charset=utf-8"
+              },
+              {
+                "name": "Content-Security-Policy",
+                "value": "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'"
+              },
+              {
+                "name": "Cache-Control",
+                "value": "no-store"
+              },
+              {
+                "name": "X-Content-Type-Options",
+                "value": "nosniff"
+              }
+            ]
+          }
+        }
+      },
+      "id": "00000000-0000-4000-8000-000000000902",
+      "name": "Respond Page",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        1440,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "sync-review-submit",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "00000000-0000-4000-8000-000000000904",
+      "name": "Submit Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        560
+      ],
+      "webhookId": "00000000-0000-4000-8000-000000000903",
+      "notes": "Recibe el formulario de la página (application/x-www-form-urlencoded)."
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "{\n  \"config\": {\n    \"mode\": \"mock\",\n    \"defaultCountry\": \"57\",\n    \"nameThreshold\": 0.5,\n    \"lockSeconds\": 300,\n    \"internalToken\": \"local-dev-token\",\n    \"reviewUrl\": \"http://localhost:5678/webhook/sync-review\",\n    \"reviewSubmitUrl\": \"/webhook/sync-review-submit\",\n    \"ownerEmail\": \"ops-lead@example.com\",\n    \"fromEmail\": \"sync@demo.example\",\n    \"dataLabel\": \"TEST DATA · synthetic contacts (mock CRM and sheet)\"\n  }\n}",
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "00000000-0000-4000-8000-000000000905",
+      "name": "Config (submit)",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        240,
+        560
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const item = $input.item.json;\nconst body = item.body || {};\nconst ok = v => typeof v === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(v);\nreturn { json: { form: body, review: ok(body.review) ? body.review : '', token: ok(body.token) ? body.token : '', config: item.config } };"
+      },
+      "id": "00000000-0000-4000-8000-000000000906",
+      "name": "Parse Submit",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        560
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "00000000-0000-4000-8000-000000000907",
+              "leftValue": "={{ !!$json.review && !!$json.token }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "00000000-0000-4000-8000-000000000908",
+      "name": "Submit Valid?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        720,
+        560
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const { renderMessagePage } = (() => {\n  const module = { exports: {} };\n// Revisión por lead: la página que muestra los borradores REALES (ya generados) y la lógica que procesa lo que el dueño decide.\n// Todo dato de CRM/lead es no confiable: se escapa SIEMPRE. Si algo es ambiguo, se salta (falla cerrado).\nconst esc = v => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\"/g, '&quot;').replace(/'/g, '&#39;');\n\n// Estilos compartidos (sistema de diseño: panel denso, azul + acento ámbar, foco visible, sin fuentes ni scripts externos).\nconst BASE_CSS = `\n:root{--bg:#f8fafc;--surface:#fff;--fg:#0f172a;--muted:#475569;--border:#cbd5e1;--primary:#1e40af;--on-primary:#fff;--accent:#b45309;--accent-bg:#fef3c7;--ok:#166534;--ok-bg:#dcfce7;--bad:#b91c1c;--bad-bg:#fee2e2;--ring:#1e40af;--radius:10px}\n@media (prefers-color-scheme:dark){:root{--bg:#0b1220;--surface:#111a2e;--fg:#e2e8f0;--muted:#94a3b8;--border:#2a3a5c;--primary:#60a5fa;--on-primary:#0b1220;--accent:#fbbf24;--accent-bg:#3a2a07;--ok:#86efac;--ok-bg:#0f2f1b;--bad:#fca5a5;--bad-bg:#3b1313;--ring:#93c5fd}}\n*{box-sizing:border-box}html{-webkit-text-size-adjust:100%}\nbody{margin:0;background:var(--bg);color:var(--fg);font:16px/1.5 ui-sans-serif,system-ui,\"Segoe UI\",Roboto,Helvetica,Arial,sans-serif}\na{color:var(--primary)}\n.skip{position:absolute;left:-999px;top:8px;background:var(--primary);color:var(--on-primary);padding:8px 12px;border-radius:6px;z-index:10}.skip:focus{left:8px}\n:focus-visible{outline:3px solid var(--ring);outline-offset:2px}\nheader.top{border-bottom:1px solid var(--border);background:var(--surface)}\n.wrap{max-width:960px;margin:0 auto;padding:16px}\nh1{font-size:1.4rem;line-height:1.25;margin:0 0 4px}h2{font-size:1.05rem;margin:0}\n.sub{color:var(--muted);margin:0;font-size:.95rem}\n.banner{display:inline-block;background:var(--accent-bg);color:var(--accent);border:1px solid var(--accent);border-radius:999px;padding:2px 10px;font-size:.8rem;font-weight:700;letter-spacing:.04em}\n.mono{font-family:ui-monospace,Consolas,\"Cascadia Mono\",monospace;font-size:.85rem}\n.chips{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0}\n.chip{border:1px solid var(--border);background:var(--surface);border-radius:999px;padding:2px 12px;font-size:.9rem}\n.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;margin:12px 0}\n.card.muted{opacity:.92;border-style:dashed}\n.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between}\n.pill{display:inline-block;border-radius:999px;padding:1px 10px;font-size:.8rem;font-weight:700}\n.pill.ok{background:var(--ok-bg);color:var(--ok)}.pill.bad{background:var(--bad-bg);color:var(--bad)}.pill.warn{background:var(--accent-bg);color:var(--accent)}\nlabel{display:block;font-weight:600;margin:10px 0 4px;font-size:.92rem}\ntextarea{width:100%;min-height:96px;padding:10px;border:1px solid var(--border);border-radius:8px;background:var(--bg);color:var(--fg);font:inherit;resize:vertical}\nfieldset{border:0;padding:0;margin:10px 0 0;display:flex;gap:10px;flex-wrap:wrap}\nlegend{position:absolute;left:-999px}\n.choice{display:inline-flex;align-items:center;gap:8px;min-height:44px;padding:0 16px;border:1px solid var(--border);border-radius:8px;cursor:pointer;background:var(--surface);margin:0;font-weight:600}\n.choice input{width:18px;height:18px;accent-color:var(--primary);cursor:pointer}\n.choice:has(input:checked){border-color:var(--primary);box-shadow:inset 0 0 0 1px var(--primary)}\n.note{color:var(--muted);font-size:.88rem;margin:6px 0 0}\nbutton.primary{min-height:48px;padding:0 24px;border:0;border-radius:8px;background:var(--primary);color:var(--on-primary);font:inherit;font-weight:700;cursor:pointer;transition:filter .15s}\nbutton.primary:hover{filter:brightness(1.1)}\n.bar{position:sticky;bottom:0;background:var(--surface);border-top:1px solid var(--border);padding:12px 16px}\n@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}\n`;\n\nconst page = (title, body) => `<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><meta name=\"robots\" content=\"noindex\"><title>${esc(title)}</title><style>${BASE_CSS}</style></head><body>${body}</body></html>`;\n\nfunction renderReviewPage(ctx) {\n  const { batch, drafts, submitUrl, dataLabel } = ctx;\n  const ready = drafts.filter(d => d.status === 'pending_review');\n  const blocked = drafts.filter(d => d.status === 'blocked');\n  const failed = drafts.filter(d => d.status === 'failed');\n\n  const card = d => {\n    const head = `<div class=\"row\"><div><h2>${esc(d.contact_name)}</h2><p class=\"sub\">${esc(d.email || '')}${d.company ? ' · ' + esc(d.company) : ''}</p></div>\n      <div><span class=\"pill warn\">Touch ${esc(d.touch)} · ${d.kind === 'follow_up' ? 'follow-up' : 'new'}</span></div></div>`;\n    if (d.status !== 'pending_review') {\n      return `<section class=\"card muted\" aria-label=\"${esc(d.contact_name)} (not sent)\">${head}\n        <p class=\"note\"><span class=\"pill bad\">${d.status === 'failed' ? 'Failed' : 'Blocked'}</span> ${esc(d.blocked_reason || 'no reason recorded')}. This contact will not be messaged in this batch.</p></section>`;\n    }\n    return `<section class=\"card\" aria-label=\"${esc(d.contact_name)}\">${head}\n      <label for=\"b_${esc(d.id)}\">Message to send (edit if you want)</label>\n      <textarea id=\"b_${esc(d.id)}\" name=\"b_${esc(d.id)}\" rows=\"4\">${esc(d.body_core)}</textarea>\n      <p class=\"note\">An opt-out line is added automatically. Links and price promises are not allowed. ${esc(d.send_note || '')}</p>\n      <fieldset><legend>Decision for ${esc(d.contact_name)}</legend>\n        <label class=\"choice\"><input type=\"radio\" name=\"d_${esc(d.id)}\" value=\"send\" checked> Send</label>\n        <label class=\"choice\"><input type=\"radio\" name=\"d_${esc(d.id)}\" value=\"skip\"> Skip</label>\n      </fieldset></section>`;\n  };\n\n  const body = `<a class=\"skip\" href=\"#review\">Skip to review</a>\n<header class=\"top\"><div class=\"wrap\">\n  <div class=\"row\"><h1>Review revival batch</h1>${dataLabel ? `<span class=\"banner\">${esc(dataLabel)}</span>` : ''}</div>\n  <p class=\"sub\">Batch <span class=\"mono\">${esc(batch.batch_id)}</span> · expires ${esc(batch.expires_at)}. Nothing is sent until you submit. Anything you skip, or leave unclear, is not sent.</p>\n  <div class=\"chips\" role=\"list\"><span class=\"chip\" role=\"listitem\">${ready.length} ready</span><span class=\"chip\" role=\"listitem\">${blocked.length + failed.length} blocked or failed</span><span class=\"chip\" role=\"listitem\">${drafts.length} total</span></div>\n</div></header>\n<main id=\"review\" class=\"wrap\">\n  ${ready.length ? `<form method=\"post\" action=\"${esc(submitUrl)}\"><input type=\"hidden\" name=\"batch\" value=\"${esc(batch.batch_id)}\"><input type=\"hidden\" name=\"token\" value=\"${esc(batch.token)}\">\n    ${drafts.map(card).join('')}\n    <div class=\"bar\"><div class=\"wrap row\"><span class=\"note\">${ready.length} message${ready.length === 1 ? '' : 's'} to decide.</span><button class=\"primary\" type=\"submit\">Submit decisions</button></div></div></form>`\n    : `${drafts.map(card).join('')}<p class=\"card\">There is nothing to send in this batch.</p>`}\n</main>`;\n  return page('Review revival batch', body);\n}\n\n// form: body del POST (claves d_<id> y b_<id>). Devuelve una decisión por cada borrador PENDIENTE del lote; nada más.\nfunction applyReview(drafts, form, finalize) {\n  const decisions = [];\n  const summary = { approved: 0, skipped: 0, edited: 0, rejected_edits: [] };\n  for (const d of drafts.filter(x => x.status === 'pending_review')) {\n    const wantsSend = form[`d_${d.id}`] === 'send';\n    const raw = form[`b_${d.id}`];\n    const core = (typeof raw === 'string' ? raw.replace(/\\r\\n?/g, '\\n').trim() : String(d.body_core || '').trim());\n    const skip = (reason) => { decisions.push({ id: d.id, status: 'skipped', body_core: d.body_core, body: d.body || null, edited: false, reason }); summary.skipped++; };\n\n    if (!wantsSend) { skip('owner_skipped'); continue; }\n    if (!core) { skip('empty_message'); continue; }\n    if (core.length > 2000) { summary.rejected_edits.push({ id: d.id, name: d.contact_name, reason: 'edit_rejected:too_long' }); skip('edit_rejected:too_long'); continue; }\n    const f = finalize(core);\n    if (!f.ok) { const reason = `edit_rejected:${f.issues.join(',')}`; summary.rejected_edits.push({ id: d.id, name: d.contact_name, reason }); skip(reason); continue; }\n    const edited = core !== String(d.body_core || '').trim();\n    decisions.push({ id: d.id, status: 'approved', body_core: core, body: f.text, edited, reason: null });\n    summary.approved++;\n    if (edited) summary.edited++;\n  }\n  return { decisions, summary };\n}\n\nfunction renderResultPage(summary, dataLabel) {\n  const rej = summary.rejected_edits || [];\n  const body = `<a class=\"skip\" href=\"#main\">Skip to content</a>\n<header class=\"top\"><div class=\"wrap\"><div class=\"row\"><h1>Decisions recorded</h1>${dataLabel ? `<span class=\"banner\">${esc(dataLabel)}</span>` : ''}</div>\n<p class=\"sub\">The approved messages are being sent now, inside each contact's local sending hours.</p></div></header>\n<main id=\"main\" class=\"wrap\">\n  <div class=\"chips\"><span class=\"chip\"><span class=\"pill ok\">${esc(summary.approved)}</span> approved</span><span class=\"chip\">${esc(summary.edited)} edited</span><span class=\"chip\">${esc(summary.skipped)} skipped</span></div>\n  ${rej.length ? `<div class=\"card\"><h2>Edits that were not accepted</h2><p class=\"note\">These messages were skipped because the edited text broke a safety rule (links, price or guarantee promises, or length).</p><ul>${rej.map(r => `<li>${esc(r.name)} — <span class=\"mono\">${esc(r.reason)}</span></li>`).join('')}</ul></div>` : ''}\n  <p class=\"note\">You can close this page.</p>\n</main>`;\n  return page('Decisions recorded', body);\n}\n\nfunction renderMessagePage({ title, message }) {\n  return page(title, `<main class=\"wrap\"><div class=\"card\"><h1>${esc(title)}</h1><p>${esc(message)}</p></div></main>`);\n}\n\nmodule.exports = { esc, BASE_CSS, page, renderReviewPage, applyReview, renderResultPage, renderMessagePage };\n\n  return module.exports;\n})();\n\nreturn { json: { html: renderMessagePage({ title: 'Submission not valid', message: 'The form is missing information. Nothing was changed.' }), http_status: 400 } };"
+      },
+      "id": "00000000-0000-4000-8000-000000000909",
+      "name": "Render Invalid Submit",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        960,
+        760
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT r.review_id, r.token, (r.expires_at < now()) AS expired,\n  COALESCE((SELECT jsonb_agg(to_jsonb(c) ORDER BY c.id) FROM (\n    SELECT id, crm_id, sheet_id, field, crm_value, sheet_value, base_value, crm_updated_at, sheet_updated_at FROM sync_conflicts WHERE status = 'open') c), '[]'::jsonb) AS conflicts\nFROM sync_reviews r WHERE r.review_id = $1 AND r.token = $2",
+        "options": {
+          "queryReplacement": "={{ [$json.review, $json.token] }}"
+        }
+      },
+      "id": "00000000-0000-4000-8000-000000000910",
+      "name": "Load Conflicts (submit)",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        960,
+        560
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "postgresLocal01",
+          "name": "Postgres local (automations)"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000,
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const __libs = {};\nconst { renderMessagePage } = (() => {\n  const module = { exports: {} };\n// Revisión por lead: la página que muestra los borradores REALES (ya generados) y la lógica que procesa lo que el dueño decide.\n// Todo dato de CRM/lead es no confiable: se escapa SIEMPRE. Si algo es ambiguo, se salta (falla cerrado).\nconst esc = v => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\"/g, '&quot;').replace(/'/g, '&#39;');\n\n// Estilos compartidos (sistema de diseño: panel denso, azul + acento ámbar, foco visible, sin fuentes ni scripts externos).\nconst BASE_CSS = `\n:root{--bg:#f8fafc;--surface:#fff;--fg:#0f172a;--muted:#475569;--border:#cbd5e1;--primary:#1e40af;--on-primary:#fff;--accent:#b45309;--accent-bg:#fef3c7;--ok:#166534;--ok-bg:#dcfce7;--bad:#b91c1c;--bad-bg:#fee2e2;--ring:#1e40af;--radius:10px}\n@media (prefers-color-scheme:dark){:root{--bg:#0b1220;--surface:#111a2e;--fg:#e2e8f0;--muted:#94a3b8;--border:#2a3a5c;--primary:#60a5fa;--on-primary:#0b1220;--accent:#fbbf24;--accent-bg:#3a2a07;--ok:#86efac;--ok-bg:#0f2f1b;--bad:#fca5a5;--bad-bg:#3b1313;--ring:#93c5fd}}\n*{box-sizing:border-box}html{-webkit-text-size-adjust:100%}\nbody{margin:0;background:var(--bg);color:var(--fg);font:16px/1.5 ui-sans-serif,system-ui,\"Segoe UI\",Roboto,Helvetica,Arial,sans-serif}\na{color:var(--primary)}\n.skip{position:absolute;left:-999px;top:8px;background:var(--primary);color:var(--on-primary);padding:8px 12px;border-radius:6px;z-index:10}.skip:focus{left:8px}\n:focus-visible{outline:3px solid var(--ring);outline-offset:2px}\nheader.top{border-bottom:1px solid var(--border);background:var(--surface)}\n.wrap{max-width:960px;margin:0 auto;padding:16px}\nh1{font-size:1.4rem;line-height:1.25;margin:0 0 4px}h2{font-size:1.05rem;margin:0}\n.sub{color:var(--muted);margin:0;font-size:.95rem}\n.banner{display:inline-block;background:var(--accent-bg);color:var(--accent);border:1px solid var(--accent);border-radius:999px;padding:2px 10px;font-size:.8rem;font-weight:700;letter-spacing:.04em}\n.mono{font-family:ui-monospace,Consolas,\"Cascadia Mono\",monospace;font-size:.85rem}\n.chips{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0}\n.chip{border:1px solid var(--border);background:var(--surface);border-radius:999px;padding:2px 12px;font-size:.9rem}\n.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;margin:12px 0}\n.card.muted{opacity:.92;border-style:dashed}\n.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between}\n.pill{display:inline-block;border-radius:999px;padding:1px 10px;font-size:.8rem;font-weight:700}\n.pill.ok{background:var(--ok-bg);color:var(--ok)}.pill.bad{background:var(--bad-bg);color:var(--bad)}.pill.warn{background:var(--accent-bg);color:var(--accent)}\nlabel{display:block;font-weight:600;margin:10px 0 4px;font-size:.92rem}\ntextarea{width:100%;min-height:96px;padding:10px;border:1px solid var(--border);border-radius:8px;background:var(--bg);color:var(--fg);font:inherit;resize:vertical}\nfieldset{border:0;padding:0;margin:10px 0 0;display:flex;gap:10px;flex-wrap:wrap}\nlegend{position:absolute;left:-999px}\n.choice{display:inline-flex;align-items:center;gap:8px;min-height:44px;padding:0 16px;border:1px solid var(--border);border-radius:8px;cursor:pointer;background:var(--surface);margin:0;font-weight:600}\n.choice input{width:18px;height:18px;accent-color:var(--primary);cursor:pointer}\n.choice:has(input:checked){border-color:var(--primary);box-shadow:inset 0 0 0 1px var(--primary)}\n.note{color:var(--muted);font-size:.88rem;margin:6px 0 0}\nbutton.primary{min-height:48px;padding:0 24px;border:0;border-radius:8px;background:var(--primary);color:var(--on-primary);font:inherit;font-weight:700;cursor:pointer;transition:filter .15s}\nbutton.primary:hover{filter:brightness(1.1)}\n.bar{position:sticky;bottom:0;background:var(--surface);border-top:1px solid var(--border);padding:12px 16px}\n@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}\n`;\n\nconst page = (title, body) => `<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><meta name=\"robots\" content=\"noindex\"><title>${esc(title)}</title><style>${BASE_CSS}</style></head><body>${body}</body></html>`;\n\nfunction renderReviewPage(ctx) {\n  const { batch, drafts, submitUrl, dataLabel } = ctx;\n  const ready = drafts.filter(d => d.status === 'pending_review');\n  const blocked = drafts.filter(d => d.status === 'blocked');\n  const failed = drafts.filter(d => d.status === 'failed');\n\n  const card = d => {\n    const head = `<div class=\"row\"><div><h2>${esc(d.contact_name)}</h2><p class=\"sub\">${esc(d.email || '')}${d.company ? ' · ' + esc(d.company) : ''}</p></div>\n      <div><span class=\"pill warn\">Touch ${esc(d.touch)} · ${d.kind === 'follow_up' ? 'follow-up' : 'new'}</span></div></div>`;\n    if (d.status !== 'pending_review') {\n      return `<section class=\"card muted\" aria-label=\"${esc(d.contact_name)} (not sent)\">${head}\n        <p class=\"note\"><span class=\"pill bad\">${d.status === 'failed' ? 'Failed' : 'Blocked'}</span> ${esc(d.blocked_reason || 'no reason recorded')}. This contact will not be messaged in this batch.</p></section>`;\n    }\n    return `<section class=\"card\" aria-label=\"${esc(d.contact_name)}\">${head}\n      <label for=\"b_${esc(d.id)}\">Message to send (edit if you want)</label>\n      <textarea id=\"b_${esc(d.id)}\" name=\"b_${esc(d.id)}\" rows=\"4\">${esc(d.body_core)}</textarea>\n      <p class=\"note\">An opt-out line is added automatically. Links and price promises are not allowed. ${esc(d.send_note || '')}</p>\n      <fieldset><legend>Decision for ${esc(d.contact_name)}</legend>\n        <label class=\"choice\"><input type=\"radio\" name=\"d_${esc(d.id)}\" value=\"send\" checked> Send</label>\n        <label class=\"choice\"><input type=\"radio\" name=\"d_${esc(d.id)}\" value=\"skip\"> Skip</label>\n      </fieldset></section>`;\n  };\n\n  const body = `<a class=\"skip\" href=\"#review\">Skip to review</a>\n<header class=\"top\"><div class=\"wrap\">\n  <div class=\"row\"><h1>Review revival batch</h1>${dataLabel ? `<span class=\"banner\">${esc(dataLabel)}</span>` : ''}</div>\n  <p class=\"sub\">Batch <span class=\"mono\">${esc(batch.batch_id)}</span> · expires ${esc(batch.expires_at)}. Nothing is sent until you submit. Anything you skip, or leave unclear, is not sent.</p>\n  <div class=\"chips\" role=\"list\"><span class=\"chip\" role=\"listitem\">${ready.length} ready</span><span class=\"chip\" role=\"listitem\">${blocked.length + failed.length} blocked or failed</span><span class=\"chip\" role=\"listitem\">${drafts.length} total</span></div>\n</div></header>\n<main id=\"review\" class=\"wrap\">\n  ${ready.length ? `<form method=\"post\" action=\"${esc(submitUrl)}\"><input type=\"hidden\" name=\"batch\" value=\"${esc(batch.batch_id)}\"><input type=\"hidden\" name=\"token\" value=\"${esc(batch.token)}\">\n    ${drafts.map(card).join('')}\n    <div class=\"bar\"><div class=\"wrap row\"><span class=\"note\">${ready.length} message${ready.length === 1 ? '' : 's'} to decide.</span><button class=\"primary\" type=\"submit\">Submit decisions</button></div></div></form>`\n    : `${drafts.map(card).join('')}<p class=\"card\">There is nothing to send in this batch.</p>`}\n</main>`;\n  return page('Review revival batch', body);\n}\n\n// form: body del POST (claves d_<id> y b_<id>). Devuelve una decisión por cada borrador PENDIENTE del lote; nada más.\nfunction applyReview(drafts, form, finalize) {\n  const decisions = [];\n  const summary = { approved: 0, skipped: 0, edited: 0, rejected_edits: [] };\n  for (const d of drafts.filter(x => x.status === 'pending_review')) {\n    const wantsSend = form[`d_${d.id}`] === 'send';\n    const raw = form[`b_${d.id}`];\n    const core = (typeof raw === 'string' ? raw.replace(/\\r\\n?/g, '\\n').trim() : String(d.body_core || '').trim());\n    const skip = (reason) => { decisions.push({ id: d.id, status: 'skipped', body_core: d.body_core, body: d.body || null, edited: false, reason }); summary.skipped++; };\n\n    if (!wantsSend) { skip('owner_skipped'); continue; }\n    if (!core) { skip('empty_message'); continue; }\n    if (core.length > 2000) { summary.rejected_edits.push({ id: d.id, name: d.contact_name, reason: 'edit_rejected:too_long' }); skip('edit_rejected:too_long'); continue; }\n    const f = finalize(core);\n    if (!f.ok) { const reason = `edit_rejected:${f.issues.join(',')}`; summary.rejected_edits.push({ id: d.id, name: d.contact_name, reason }); skip(reason); continue; }\n    const edited = core !== String(d.body_core || '').trim();\n    decisions.push({ id: d.id, status: 'approved', body_core: core, body: f.text, edited, reason: null });\n    summary.approved++;\n    if (edited) summary.edited++;\n  }\n  return { decisions, summary };\n}\n\nfunction renderResultPage(summary, dataLabel) {\n  const rej = summary.rejected_edits || [];\n  const body = `<a class=\"skip\" href=\"#main\">Skip to content</a>\n<header class=\"top\"><div class=\"wrap\"><div class=\"row\"><h1>Decisions recorded</h1>${dataLabel ? `<span class=\"banner\">${esc(dataLabel)}</span>` : ''}</div>\n<p class=\"sub\">The approved messages are being sent now, inside each contact's local sending hours.</p></div></header>\n<main id=\"main\" class=\"wrap\">\n  <div class=\"chips\"><span class=\"chip\"><span class=\"pill ok\">${esc(summary.approved)}</span> approved</span><span class=\"chip\">${esc(summary.edited)} edited</span><span class=\"chip\">${esc(summary.skipped)} skipped</span></div>\n  ${rej.length ? `<div class=\"card\"><h2>Edits that were not accepted</h2><p class=\"note\">These messages were skipped because the edited text broke a safety rule (links, price or guarantee promises, or length).</p><ul>${rej.map(r => `<li>${esc(r.name)} — <span class=\"mono\">${esc(r.reason)}</span></li>`).join('')}</ul></div>` : ''}\n  <p class=\"note\">You can close this page.</p>\n</main>`;\n  return page('Decisions recorded', body);\n}\n\nfunction renderMessagePage({ title, message }) {\n  return page(title, `<main class=\"wrap\"><div class=\"card\"><h1>${esc(title)}</h1><p>${esc(message)}</p></div></main>`);\n}\n\nmodule.exports = { esc, BASE_CSS, page, renderReviewPage, applyReview, renderResultPage, renderMessagePage };\n\n  __libs['review'] = module.exports;\n  return module.exports;\n})();\nconst {  } = (() => {\n  const module = { exports: {} };\n// CRM ↔ Sheets Sync: lógica 100 % determinística (sin IA). Planifica; no escribe nada.\r\n// Reglas: nunca se borra ni se propaga un borrado; un cambio en un solo lado se copia; un cambio distinto en los DOS lados es un\r\n// conflicto y no se toca ninguno; los casos dudosos (mismo teléfono, nombres distintos) se reportan y NO se fusionan.\r\nconst FIELDS = ['name', 'email', 'phone', 'company', 'stage'];\r\n\r\nconst fold = s => String(s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\\s+/g, ' ').trim();\r\n\r\nfunction normEmail(v) {\r\n  const e = String(v ?? '').trim().toLowerCase();\r\n  return /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(e) ? e : '';\r\n}\r\n\r\n// Misma regla que norm_phone() en SQL: menos de 8 dígitos = no es un teléfono.\r\nfunction normPhone(v, cc = '57') {\r\n  const s = String(v ?? '').trim();\r\n  const d = s.replace(/[^0-9]/g, '');\r\n  if (d.length < 8) return '';\r\n  if (s.startsWith('+') || d.length >= 11) return '+' + d;\r\n  return '+' + cc + d;\r\n}\r\n\r\n// Similitud de nombres: Jaccard de palabras, ignorando mayúsculas y tildes. Vacío = 0.\r\nfunction nameSimilarity(a, b) {\r\n  const ta = new Set(fold(a).split(' ').filter(Boolean));\r\n  const tb = new Set(fold(b).split(' ').filter(Boolean));\r\n  if (!ta.size || !tb.size) return 0;\r\n  let inter = 0;\r\n  for (const t of ta) if (tb.has(t)) inter++;\r\n  return inter / (ta.size + tb.size - inter);\r\n}\r\n\r\n// Forma canónica para COMPARAR (nunca para mostrar): evita falsos conflictos por mayúsculas, espacios o formato de teléfono.\r\nconst canon = (field, v, cc) => field === 'email' ? normEmail(v) : field === 'phone' ? normPhone(v, cc) : fold(v);\r\n// Forma para ESCRIBIR en el otro sistema.\r\nconst outValue = (field, v, cc) => field === 'email' ? normEmail(v) : field === 'phone' ? normPhone(v, cc) : String(v ?? '').replace(/\\s+/g, ' ').trim();\r\n\r\nconst createdId = (side, fromId) => (side === 'crm' ? 'crm-from-' : 'row-from-') + fromId;\r\n\r\nfunction planSync({ crm = [], sheet = [], links = [], defaultCountry = '57', nameThreshold = 0.5 } = {}) {\r\n  const cc = defaultCountry;\r\n  const plan = {\r\n    creates: { crm: [], sheet: [] },\r\n    updates: { crm: [], sheet: [] },\r\n    new_links: [],\r\n    base_updates: [],\r\n    duplicates: [],\r\n    conflicts: [],\r\n    issues: [],\r\n    changes: [],\r\n    stats: {},\r\n  };\r\n  const seenKeys = new Set();\r\n  // Una incidencia por clave: la misma pareja puede detectarse desde ambos lados.\r\n  const issue = (kind, key, detail) => { if (seenKeys.has(key)) return; seenKeys.add(key); plan.issues.push({ kind, key, detail }); };\r\n  const keyOf = (...p) => p.join(':');\r\n  const pairKey = (kind, side, a, b) => keyOf(kind, side, ...[a, b].sort());\r\n\r\n  const prep = (side, rows) => {\r\n    const ok = [];\r\n    for (const r of [...rows].sort((a, b) => String(a.id).localeCompare(String(b.id)))) {\r\n      const n = { ...r, id: String(r.id), _email: normEmail(r.email), _phone: normPhone(r.phone, cc) };\r\n      if (!n._email && !n._phone) { issue('invalid_record', keyOf('invalid', side, n.id), { side, id: n.id, reason: 'no_valid_email_or_phone' }); continue; }\r\n      ok.push(n);\r\n    }\r\n    return ok;\r\n  };\r\n\r\n  const linkedCrm = new Set(links.map(l => String(l.crm_id)));\r\n  const linkedSheet = new Set(links.map(l => String(l.sheet_id)));\r\n\r\n  // ── 1) Duplicados dentro de un mismo lado ──\r\n  const dedupe = (side, rows, linkedSet) => {\r\n    const parent = new Map(rows.map(r => [r.id, r.id]));\r\n    const find = x => { while (parent.get(x) !== x) { parent.set(x, parent.get(parent.get(x))); x = parent.get(x); } return x; };\r\n    const union = (a, b) => { const ra = find(a), rb = find(b); if (ra !== rb) parent.set(rb, ra); };\r\n    const reason = new Map();\r\n    for (let i = 0; i < rows.length; i++) for (let j = i + 1; j < rows.length; j++) {\r\n      const a = rows[i], b = rows[j];\r\n      if (a._email && a._email === b._email) { union(a.id, b.id); reason.set(b.id, 'same_email'); }\r\n      else if (a._phone && a._phone === b._phone) {\r\n        if (nameSimilarity(a.name, b.name) >= nameThreshold) { union(a.id, b.id); reason.set(b.id, 'same_phone_similar_name'); }\r\n        else issue('possible_duplicate', pairKey('dup', side, a.id, b.id), { side, ids: [a.id, b.id], reason: 'same_phone_different_name' });\r\n      }\r\n    }\r\n    const groups = new Map();\r\n    for (const r of rows) { const g = find(r.id); groups.set(g, [...(groups.get(g) || []), r]); }\r\n    const active = [];\r\n    for (const members of groups.values()) {\r\n      if (members.length === 1) { active.push(members[0]); continue; }\r\n      const linked = members.filter(m => linkedSet.has(m.id));\r\n      if (linked.length > 1) {\r\n        issue('possible_duplicate', keyOf('dup-linked', side, ...members.map(m => m.id).sort()), { side, ids: members.map(m => m.id), reason: 'several_linked_records' });\r\n        active.push(...members);\r\n        continue;\r\n      }\r\n      const canonical = linked[0] || members[0];\r\n      active.push(canonical);\r\n      for (const m of members) if (m !== canonical) plan.duplicates.push({ side, id: m.id, canonical: canonical.id, reason: reason.get(m.id) || 'same_email' });\r\n    }\r\n    return active;\r\n  };\r\n\r\n  const crmA = dedupe('crm', prep('crm', crm), linkedCrm);\r\n  const sheetA = dedupe('sheet', prep('sheet', sheet), linkedSheet);\r\n  const crmById = new Map(crmA.map(r => [r.id, r]));\r\n  const sheetById = new Map(sheetA.map(r => [r.id, r]));\r\n\r\n  // ── 2) Pares ya vinculados: fusión de tres vías contra el último valor sincronizado ──\r\n  const mergePair = (c, s, base, upd, linkRef) => {\r\n    const newBase = { ...base };\r\n    const toSheet = {}, toCrm = {};\r\n    for (const f of FIELDS) {\r\n      const cv = canon(f, c[f], cc), sv = canon(f, s[f], cc), bv = base[f] ?? '';\r\n      if (cv === sv) { newBase[f] = cv; continue; }\r\n      const crmChanged = cv !== bv, sheetChanged = sv !== bv;\r\n      if (crmChanged && sheetChanged) {\r\n        plan.conflicts.push({ crm_id: c.id, sheet_id: s.id, field: f, crm_value: String(c[f] ?? ''), sheet_value: String(s[f] ?? ''), base_value: bv, crm_updated_at: c.updated_at ?? null, sheet_updated_at: s.updated_at ?? null });\r\n      } else if (crmChanged) {\r\n        if (cv === '') issue('blank_ignored', keyOf('blank', linkRef, f, 'crm'), { field: f, crm_id: c.id, sheet_id: s.id, side: 'crm' });\r\n        else { toSheet[f] = outValue(f, c[f], cc); newBase[f] = cv; }\r\n      } else if (sheetChanged) {\r\n        if (sv === '') issue('blank_ignored', keyOf('blank', linkRef, f, 'sheet'), { field: f, crm_id: c.id, sheet_id: s.id, side: 'sheet' });\r\n        else { toCrm[f] = outValue(f, s[f], cc); newBase[f] = sv; }\r\n      }\r\n    }\r\n    if (Object.keys(toSheet).length) {\r\n      plan.updates.sheet.push({ id: s.id, fields: toSheet, expected_updated_at: s.updated_at ?? null });\r\n      for (const [f, v] of Object.entries(toSheet)) plan.changes.push({ side: 'sheet', action: 'update', entity_id: s.id, field: f, old_value: String(s[f] ?? ''), new_value: v, source_id: c.id });\r\n    }\r\n    if (Object.keys(toCrm).length) {\r\n      plan.updates.crm.push({ id: c.id, fields: toCrm, expected_updated_at: c.updated_at ?? null });\r\n      for (const [f, v] of Object.entries(toCrm)) plan.changes.push({ side: 'crm', action: 'update', entity_id: c.id, field: f, old_value: String(c[f] ?? ''), new_value: v, source_id: s.id });\r\n    }\r\n    return newBase;\r\n  };\r\n\r\n  for (const l of [...links].sort((a, b) => Number(a.link_id) - Number(b.link_id))) {\r\n    const c = crmById.get(String(l.crm_id)), s = sheetById.get(String(l.sheet_id));\r\n    if (!c || !s) { issue('orphan_link', keyOf('orphan', l.link_id), { link_id: l.link_id, crm_id: l.crm_id, sheet_id: l.sheet_id, missing: !c && !s ? 'both' : !c ? 'crm' : 'sheet' }); continue; }\r\n    const base = l.base || {};\r\n    const newBase = mergePair(c, s, base, null, String(l.link_id));\r\n    if (FIELDS.some(f => (newBase[f] ?? '') !== (base[f] ?? ''))) plan.base_updates.push({ link_id: l.link_id, base: newBase });\r\n  }\r\n\r\n  // ── 3) Registros sin vínculo: emparejar, retener o crear ──\r\n  const freeCrm = crmA.filter(r => !linkedCrm.has(r.id));\r\n  const freeSheet = sheetA.filter(r => !linkedSheet.has(r.id));\r\n  const taken = new Set();\r\n  const pairs = [];\r\n  for (const c of freeCrm) {\r\n    let m = c._email ? freeSheet.find(s => !taken.has(s.id) && s._email === c._email) : null;\r\n    if (!m && c._phone) m = freeSheet.find(s => !taken.has(s.id) && s._phone === c._phone && nameSimilarity(c.name, s.name) >= nameThreshold);\r\n    if (m) { taken.add(m.id); pairs.push([c, m]); }\r\n  }\r\n  const pairedCrm = new Set(pairs.map(p => p[0].id));\r\n  for (const [c, s] of pairs) {\r\n    const base = {};\r\n    for (const f of FIELDS) { const cv = canon(f, c[f], cc), sv = canon(f, s[f], cc); base[f] = cv === sv ? cv : ''; }\r\n    const nb = mergePair(c, s, base, null, `new:${c.id}:${s.id}`);\r\n    plan.new_links.push({ crm_id: c.id, sheet_id: s.id, base: nb, how: c._email && c._email === s._email ? 'email' : 'phone_and_name' });\r\n  }\r\n\r\n  const heldCrm = new Set(), heldSheet = new Set();\r\n  const hold = (c, s, reason) => { heldCrm.add(c.id); heldSheet.add(s.id); issue('possible_duplicate', pairKey('dup-x', 'crm-sheet', c.id, s.id), { crm_id: c.id, sheet_id: s.id, reason }); };\r\n  const looksSame = (a, b) => (a._email && a._email === b._email) || (a._phone && a._phone === b._phone);\r\n  for (const c of freeCrm) {\r\n    if (pairedCrm.has(c.id)) continue;\r\n    for (const s of sheetA) if (looksSame(c, s)) hold(c, s, c._email && c._email === s._email ? 'same_email_other_record_linked' : 'same_phone_different_name');\r\n  }\r\n  for (const s of freeSheet) {\r\n    if (taken.has(s.id)) continue;\r\n    for (const c of crmA) if (looksSame(c, s)) hold(c, s, c._email && c._email === s._email ? 'same_email_other_record_linked' : 'same_phone_different_name');\r\n  }\r\n\r\n  const fieldsOf = r => Object.fromEntries(FIELDS.map(f => [f, outValue(f, r[f], cc)]));\r\n  const baseOf = r => Object.fromEntries(FIELDS.map(f => [f, canon(f, r[f], cc)]));\r\n  for (const c of freeCrm) if (!pairedCrm.has(c.id) && !heldCrm.has(c.id)) {\r\n    plan.creates.sheet.push({ new_id: createdId('sheet', c.id), from_id: c.id, fields: fieldsOf(c), base: baseOf(c) });\r\n    plan.new_links.push({ crm_id: c.id, sheet_id: createdId('sheet', c.id), base: baseOf(c), how: 'created_in_sheet' });\r\n  }\r\n  for (const s of freeSheet) if (!taken.has(s.id) && !heldSheet.has(s.id)) {\r\n    plan.creates.crm.push({ new_id: createdId('crm', s.id), from_id: s.id, fields: fieldsOf(s), base: baseOf(s) });\r\n    plan.new_links.push({ crm_id: createdId('crm', s.id), sheet_id: s.id, base: baseOf(s), how: 'created_in_crm' });\r\n  }\r\n\r\n  for (const c of plan.creates.sheet) plan.changes.push({ side: 'sheet', action: 'create', entity_id: c.new_id, field: null, old_value: null, new_value: JSON.stringify(c.fields), source_id: c.from_id });\r\n  for (const c of plan.creates.crm) plan.changes.push({ side: 'crm', action: 'create', entity_id: c.new_id, field: null, old_value: null, new_value: JSON.stringify(c.fields), source_id: c.from_id });\r\n  for (const d of plan.duplicates) plan.changes.push({ side: d.side, action: 'mark_duplicate', entity_id: d.id, field: 'merged_into', old_value: null, new_value: d.canonical, source_id: d.reason });\r\n\r\n  const n = k => plan.issues.filter(i => i.kind === k).length;\r\n  plan.stats = {\r\n    crm_records: crmA.length, sheet_records: sheetA.length, links: links.length,\r\n    created_in_crm: plan.creates.crm.length, created_in_sheet: plan.creates.sheet.length,\r\n    updated_in_crm: plan.updates.crm.length, updated_in_sheet: plan.updates.sheet.length,\r\n    new_links: plan.new_links.length, duplicates_marked: plan.duplicates.length, conflicts: plan.conflicts.length,\r\n    invalid: n('invalid_record'), possible_duplicates: n('possible_duplicate'), orphan_links: n('orphan_link'), blank_ignored: n('blank_ignored'),\r\n  };\r\n  plan.writes = plan.stats.created_in_crm + plan.stats.created_in_sheet + plan.stats.updated_in_crm + plan.stats.updated_in_sheet + plan.base_updates.length + plan.duplicates.length;\r\n  return plan;\r\n}\r\n\r\n// Qué hacer con un conflicto según la decisión de la persona. 'pending' (o cualquier otra cosa) no toca nada: falla cerrado.\r\nfunction resolveChoice(conflict, choice) {\r\n  if (choice === 'crm') return { action: 'copy', write_to: 'sheet', value: outValue(conflict.field, conflict.crm_value), base: canon(conflict.field, conflict.crm_value) };\r\n  if (choice === 'sheet') return { action: 'copy', write_to: 'crm', value: outValue(conflict.field, conflict.sheet_value), base: canon(conflict.field, conflict.sheet_value) };\r\n  return { action: 'none' };\r\n}\r\n\r\nconst FIELD_LABEL = { name: 'Name', email: 'Email', phone: 'Phone', company: 'Company', stage: 'Stage' };\r\nconst KIND_LABEL = { invalid_record: 'Invalid record (no valid email or phone)', possible_duplicate: 'Possible duplicate (not merged)', orphan_link: 'Linked record missing on one side (nothing deleted)', blank_ignored: 'Field cleared on one side (not copied)' };\r\n\r\nfunction describeIssue(i) {\r\n  const d = i.detail || {};\r\n  if (i.kind === 'invalid_record') return `${d.side} ${d.id}: ${d.reason}`;\r\n  if (i.kind === 'possible_duplicate') return d.side ? `${d.side} ${d.ids.join(' & ')}: ${d.reason}` : `crm ${d.crm_id} & sheet ${d.sheet_id}: ${d.reason}`;\r\n  if (i.kind === 'orphan_link') return `link ${d.link_id}: missing on ${d.missing} (crm ${d.crm_id}, sheet ${d.sheet_id})`;\r\n  return `${d.field} cleared on ${d.side} (crm ${d.crm_id}, sheet ${d.sheet_id})`;\r\n}\r\n\r\n// Email de aviso: solo lo NUEVO (incidencias y conflictos recién vistos). Texto plano + HTML escapado.\r\nfunction buildNotice({ stats, newIssues = [], newConflicts = [], reviewLink = null, dataLabel = '' }) {\r\n  const esc = v => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\r\n  const lines = [dataLabel, '', `Sync run: ${stats.created_in_crm + stats.created_in_sheet} created, ${stats.updated_in_crm + stats.updated_in_sheet} updated, ${stats.duplicates_marked} duplicate(s) marked.`, ''];\r\n  if (newConflicts.length) {\r\n    lines.push(`${newConflicts.length} new conflict(s) - both systems changed the same field; nothing was overwritten:`);\r\n    for (const c of newConflicts.slice(0, 20)) lines.push(`  - ${FIELD_LABEL[c.field] || c.field} (crm ${c.crm_id} / sheet ${c.sheet_id}): CRM \"${c.crm_value}\" vs Sheet \"${c.sheet_value}\"`);\r\n    if (reviewLink) lines.push('', `Resolve them here: ${reviewLink}`);\r\n    lines.push('');\r\n  }\r\n  if (newIssues.length) {\r\n    lines.push(`${newIssues.length} new item(s) need a look:`);\r\n    for (const i of newIssues.slice(0, 20)) lines.push(`  - ${KIND_LABEL[i.kind] || i.kind}: ${describeIssue(i)}`);\r\n    lines.push('');\r\n  }\r\n  const html = `<p>${esc(dataLabel)}</p><p>Sync run: <b>${stats.created_in_crm + stats.created_in_sheet}</b> created, <b>${stats.updated_in_crm + stats.updated_in_sheet}</b> updated, <b>${stats.duplicates_marked}</b> duplicate(s) marked.</p>`\r\n    + (newConflicts.length ? `<p><b>${newConflicts.length}</b> new conflict(s): both systems changed the same field and nothing was overwritten.</p><ul>${newConflicts.slice(0, 20).map(c => `<li>${esc(FIELD_LABEL[c.field] || c.field)}: CRM \"${esc(c.crm_value)}\" vs Sheet \"${esc(c.sheet_value)}\"</li>`).join('')}</ul>${reviewLink ? `<p><a href=\"${esc(reviewLink)}\" style=\"display:inline-block;padding:12px 22px;background:#1e40af;color:#ffffff;border-radius:8px;text-decoration:none;font-weight:700\">Resolve conflicts</a></p>` : ''}` : '')\r\n    + (newIssues.length ? `<p><b>${newIssues.length}</b> new item(s) need a look:</p><ul>${newIssues.slice(0, 20).map(i => `<li>${esc(KIND_LABEL[i.kind] || i.kind)}: ${esc(describeIssue(i))}</li>`).join('')}</ul>` : '');\r\n  return { text: lines.join('\\n'), html };\r\n}\r\n\r\nmodule.exports = { FIELDS, FIELD_LABEL, normEmail, normPhone, nameSimilarity, canon, outValue, createdId, planSync, resolveChoice, buildNotice, describeIssue };\r\n\n  __libs['sync'] = module.exports;\n  return module.exports;\n})();\nconst { buildResolution } = (() => {\n  const module = { exports: {} };\n  const require = n => __libs[String(n).replace(/^\\.\\//, '')];\n// Página de revisión de conflictos del Sync y la lógica que procesa lo que la persona decide.\n// Todo dato de CRM/hoja es no confiable: se escapa SIEMPRE. Sin elección clara = pendiente (falla cerrado, no se toca nada).\nconst { esc, page } = require('./review');\nconst { FIELD_LABEL, resolveChoice } = require('./sync');\n\nfunction renderConflictsPage({ review, conflicts, submitUrl, dataLabel }) {\n  const card = c => `<section class=\"card\" aria-label=\"${esc(FIELD_LABEL[c.field] || c.field)} conflict\">\n    <div class=\"row\"><div><h2>${esc(FIELD_LABEL[c.field] || c.field)}</h2><p class=\"sub mono\">CRM ${esc(c.crm_id)} · Sheet ${esc(c.sheet_id)}</p></div><span class=\"pill warn\">both sides changed</span></div>\n    <div class=\"chips\" role=\"list\">\n      <span class=\"chip\" role=\"listitem\"><b>CRM:</b> ${esc(c.crm_value) || '<i>(empty)</i>'}</span>\n      <span class=\"chip\" role=\"listitem\"><b>Sheet:</b> ${esc(c.sheet_value) || '<i>(empty)</i>'}</span>\n      <span class=\"chip\" role=\"listitem\"><b>Last synced:</b> ${esc(c.base_value) || '<i>(empty)</i>'}</span>\n    </div>\n    <fieldset><legend>Decision for ${esc(FIELD_LABEL[c.field] || c.field)} (${esc(c.crm_id)})</legend>\n      <label class=\"choice\"><input type=\"radio\" name=\"c_${esc(c.id)}\" value=\"crm\"> Keep the CRM value</label>\n      <label class=\"choice\"><input type=\"radio\" name=\"c_${esc(c.id)}\" value=\"sheet\"> Keep the Sheet value</label>\n      <label class=\"choice\"><input type=\"radio\" name=\"c_${esc(c.id)}\" value=\"pending\" checked> Decide later</label>\n    </fieldset></section>`;\n  return page('Sync conflicts', `<a class=\"skip\" href=\"#main\">Skip to conflicts</a>\n<header class=\"top\"><div class=\"wrap\"><span class=\"banner\">${esc(dataLabel)}</span><h1>Resolve sync conflicts</h1>\n<p class=\"sub\">Both systems changed the same field. Nothing was overwritten. Pick which value wins; it is copied to the other system. \"Decide later\" leaves it untouched.</p></div></header>\n<main id=\"main\" class=\"wrap\"><form method=\"post\" action=\"${esc(submitUrl)}\">\n<input type=\"hidden\" name=\"review\" value=\"${esc(review.review_id)}\"><input type=\"hidden\" name=\"token\" value=\"${esc(review.token)}\">\n${conflicts.length ? conflicts.map(card).join('') : '<section class=\"card\"><p>No open conflicts. Everything is in sync.</p></section>'}\n${conflicts.length ? '<div class=\"bar\"><button class=\"primary\" type=\"submit\">Apply my choices</button></div>' : ''}\n</form></main>`);\n}\n\n// Convierte el formulario en escrituras. Cada una lleva las guardas (updated_at al detectar) para no pisar una edición posterior.\nfunction buildResolution(conflicts, form) {\n  const writes = [];\n  let pending = 0;\n  for (const c of conflicts) {\n    const choice = form['c_' + c.id];\n    const r = resolveChoice(c, choice);\n    if (r.action !== 'copy') { pending++; continue; }\n    writes.push({ conflict_id: Number(c.id), choice, write_to: r.write_to, field: c.field, value: r.value, base: r.base, crm_id: c.crm_id, sheet_id: c.sheet_id, crm_updated_at: c.crm_updated_at, sheet_updated_at: c.sheet_updated_at });\n  }\n  return { writes, summary: { requested: writes.length, pending } };\n}\n\nfunction renderResolvedPage({ resolved, stale, pending, dataLabel }) {\n  return page('Sync conflicts resolved', `<header class=\"top\"><div class=\"wrap\"><span class=\"banner\">${esc(dataLabel)}</span><h1>Choices applied</h1></div></header>\n<main class=\"wrap\"><section class=\"card\"><p><span class=\"pill ok\">${esc(resolved)} resolved</span> ${stale ? `<span class=\"pill warn\">${esc(stale)} skipped: changed since detection</span>` : ''} <span class=\"pill\">${esc(pending)} left for later</span></p>\n<p class=\"note\">Resolved values were copied to the other system and recorded in the change history. Skipped conflicts stay open: the next sync run re-checks them with the fresh values.</p></section></main>`);\n}\n\nmodule.exports = { renderConflictsPage, buildResolution, renderResolvedPage };\n\n  __libs['syncreview'] = module.exports;\n  return module.exports;\n})();\n\nconst s = $('Parse Submit').item.json;\nconst r = $input.item.json;\nconst fail = (title, message, status, outcome) => ({ json: { ...s, can_apply: false, html: renderMessagePage({ title, message }), http_status: status, outcome } });\nif (!r.review_id) return fail('Submission not valid', 'The link or token is not valid. Nothing was changed.', 403, 'invalid_token');\nif (r.expired) return fail('Link expired', 'This review link expired. Nothing was changed.', 410, 'expired');\nconst { writes, summary } = buildResolution(r.conflicts, s.form);\nreturn { json: { ...s, can_apply: true, writes, summary } };"
+      },
+      "id": "00000000-0000-4000-8000-000000000911",
+      "name": "Build Resolution",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1200,
+        560
+      ],
+      "notes": "DETERMINÍSTICO y fail-closed: sin elección clara = pendiente. El valor se normaliza igual que en la sincronización."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "00000000-0000-4000-8000-000000000912",
+              "leftValue": "={{ $json.can_apply }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "00000000-0000-4000-8000-000000000913",
+      "name": "Can Apply?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1440,
+        560
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{ $json.html }}",
+        "options": {
+          "responseCode": "={{ $json.http_status || 200 }}",
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "text/html; charset=utf-8"
+              },
+              {
+                "name": "Content-Security-Policy",
+                "value": "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'"
+              },
+              {
+                "name": "Cache-Control",
+                "value": "no-store"
+              },
+              {
+                "name": "X-Content-Type-Options",
+                "value": "nosniff"
+              }
+            ]
+          }
+        }
+      },
+      "id": "00000000-0000-4000-8000-000000000914",
+      "name": "Respond Page (submit)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        1680,
+        760
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH rv AS (SELECT 1 AS ok FROM sync_reviews WHERE review_id = $1 AND token = $2 AND expires_at > now()),\nw AS (\n  SELECT x.* FROM jsonb_to_recordset($3::jsonb) AS x(conflict_id bigint, choice text, write_to text, field text, value text, base text, crm_id text, sheet_id text, crm_updated_at timestamptz, sheet_updated_at timestamptz)\n  WHERE EXISTS (SELECT 1 FROM rv)\n),\nokk AS (\n  SELECT w.* FROM w JOIN sync_conflicts c ON c.id = w.conflict_id AND c.status = 'open'\n  WHERE EXISTS (SELECT 1 FROM sync_crm_contacts a WHERE a.id = w.crm_id AND a.updated_at = w.crm_updated_at)\n    AND EXISTS (SELECT 1 FROM sync_sheet_rows b WHERE b.id = w.sheet_id AND b.updated_at = w.sheet_updated_at)\n),\ntc AS (SELECT crm_id AS id, jsonb_object_agg(field, value) AS fields FROM okk WHERE write_to = 'crm' GROUP BY crm_id),\nts AS (SELECT sheet_id AS id, jsonb_object_agg(field, value) AS fields FROM okk WHERE write_to = 'sheet' GROUP BY sheet_id),\nuc AS (UPDATE sync_crm_contacts t SET name = CASE WHEN jsonb_exists(x.fields, 'name') THEN x.fields->>'name' ELSE t.name END, email = CASE WHEN jsonb_exists(x.fields, 'email') THEN x.fields->>'email' ELSE t.email END, phone = CASE WHEN jsonb_exists(x.fields, 'phone') THEN x.fields->>'phone' ELSE t.phone END, company = CASE WHEN jsonb_exists(x.fields, 'company') THEN x.fields->>'company' ELSE t.company END, stage = CASE WHEN jsonb_exists(x.fields, 'stage') THEN x.fields->>'stage' ELSE t.stage END FROM tc x WHERE t.id = x.id RETURNING t.id),\nus AS (UPDATE sync_sheet_rows t SET name = CASE WHEN jsonb_exists(x.fields, 'name') THEN x.fields->>'name' ELSE t.name END, email = CASE WHEN jsonb_exists(x.fields, 'email') THEN x.fields->>'email' ELSE t.email END, phone = CASE WHEN jsonb_exists(x.fields, 'phone') THEN x.fields->>'phone' ELSE t.phone END, company = CASE WHEN jsonb_exists(x.fields, 'company') THEN x.fields->>'company' ELSE t.company END, stage = CASE WHEN jsonb_exists(x.fields, 'stage') THEN x.fields->>'stage' ELSE t.stage END FROM ts x WHERE t.id = x.id RETURNING t.id),\nlk AS (\n  UPDATE sync_links l SET base = l.base || a.b, updated_at = now()\n  FROM (SELECT crm_id, sheet_id, jsonb_object_agg(field, base) AS b FROM okk GROUP BY crm_id, sheet_id) a\n  WHERE l.crm_id = a.crm_id AND l.sheet_id = a.sheet_id RETURNING l.link_id\n),\ncr AS (UPDATE sync_conflicts c SET status = 'resolved', resolution = okk.choice, resolved_at = now() FROM okk WHERE c.id = okk.conflict_id RETURNING c.id),\nch AS (\n  INSERT INTO sync_changes (run_id, side, action, entity_id, field, old_value, new_value, source_id)\n  SELECT $4, okk.write_to, 'resolve_conflict', CASE WHEN okk.write_to = 'crm' THEN okk.crm_id ELSE okk.sheet_id END, okk.field,\n         CASE WHEN okk.write_to = 'crm' THEN c.crm_value ELSE c.sheet_value END, okk.value, 'review:' || okk.choice\n  FROM okk JOIN sync_conflicts c ON c.id = okk.conflict_id RETURNING id\n)\nSELECT (SELECT count(*) FROM rv) AS review_valid, (SELECT count(*) FROM w) AS requested, (SELECT count(*) FROM cr) AS resolved, (SELECT count(*) FROM ch) AS logged,\n       (SELECT count(*) FROM uc) + (SELECT count(*) FROM us) AS records_written",
+        "options": {
+          "queryReplacement": "={{ [$json.review, $json.token, JSON.stringify($json.writes), $execution.id] }}"
+        }
+      },
+      "id": "00000000-0000-4000-8000-000000000915",
+      "name": "Persist Resolution",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1680,
+        560
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "postgresLocal01",
+          "name": "Postgres local (automations)"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000,
+      "notes": "UNA sentencia atómica. Una elección se aplica solo si ninguno de los dos registros cambió desde que se detectó el conflicto; si cambió, queda abierto."
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const __libs = {};\nconst { renderMessagePage } = (() => {\n  const module = { exports: {} };\n// Revisión por lead: la página que muestra los borradores REALES (ya generados) y la lógica que procesa lo que el dueño decide.\n// Todo dato de CRM/lead es no confiable: se escapa SIEMPRE. Si algo es ambiguo, se salta (falla cerrado).\nconst esc = v => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\"/g, '&quot;').replace(/'/g, '&#39;');\n\n// Estilos compartidos (sistema de diseño: panel denso, azul + acento ámbar, foco visible, sin fuentes ni scripts externos).\nconst BASE_CSS = `\n:root{--bg:#f8fafc;--surface:#fff;--fg:#0f172a;--muted:#475569;--border:#cbd5e1;--primary:#1e40af;--on-primary:#fff;--accent:#b45309;--accent-bg:#fef3c7;--ok:#166534;--ok-bg:#dcfce7;--bad:#b91c1c;--bad-bg:#fee2e2;--ring:#1e40af;--radius:10px}\n@media (prefers-color-scheme:dark){:root{--bg:#0b1220;--surface:#111a2e;--fg:#e2e8f0;--muted:#94a3b8;--border:#2a3a5c;--primary:#60a5fa;--on-primary:#0b1220;--accent:#fbbf24;--accent-bg:#3a2a07;--ok:#86efac;--ok-bg:#0f2f1b;--bad:#fca5a5;--bad-bg:#3b1313;--ring:#93c5fd}}\n*{box-sizing:border-box}html{-webkit-text-size-adjust:100%}\nbody{margin:0;background:var(--bg);color:var(--fg);font:16px/1.5 ui-sans-serif,system-ui,\"Segoe UI\",Roboto,Helvetica,Arial,sans-serif}\na{color:var(--primary)}\n.skip{position:absolute;left:-999px;top:8px;background:var(--primary);color:var(--on-primary);padding:8px 12px;border-radius:6px;z-index:10}.skip:focus{left:8px}\n:focus-visible{outline:3px solid var(--ring);outline-offset:2px}\nheader.top{border-bottom:1px solid var(--border);background:var(--surface)}\n.wrap{max-width:960px;margin:0 auto;padding:16px}\nh1{font-size:1.4rem;line-height:1.25;margin:0 0 4px}h2{font-size:1.05rem;margin:0}\n.sub{color:var(--muted);margin:0;font-size:.95rem}\n.banner{display:inline-block;background:var(--accent-bg);color:var(--accent);border:1px solid var(--accent);border-radius:999px;padding:2px 10px;font-size:.8rem;font-weight:700;letter-spacing:.04em}\n.mono{font-family:ui-monospace,Consolas,\"Cascadia Mono\",monospace;font-size:.85rem}\n.chips{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0}\n.chip{border:1px solid var(--border);background:var(--surface);border-radius:999px;padding:2px 12px;font-size:.9rem}\n.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;margin:12px 0}\n.card.muted{opacity:.92;border-style:dashed}\n.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between}\n.pill{display:inline-block;border-radius:999px;padding:1px 10px;font-size:.8rem;font-weight:700}\n.pill.ok{background:var(--ok-bg);color:var(--ok)}.pill.bad{background:var(--bad-bg);color:var(--bad)}.pill.warn{background:var(--accent-bg);color:var(--accent)}\nlabel{display:block;font-weight:600;margin:10px 0 4px;font-size:.92rem}\ntextarea{width:100%;min-height:96px;padding:10px;border:1px solid var(--border);border-radius:8px;background:var(--bg);color:var(--fg);font:inherit;resize:vertical}\nfieldset{border:0;padding:0;margin:10px 0 0;display:flex;gap:10px;flex-wrap:wrap}\nlegend{position:absolute;left:-999px}\n.choice{display:inline-flex;align-items:center;gap:8px;min-height:44px;padding:0 16px;border:1px solid var(--border);border-radius:8px;cursor:pointer;background:var(--surface);margin:0;font-weight:600}\n.choice input{width:18px;height:18px;accent-color:var(--primary);cursor:pointer}\n.choice:has(input:checked){border-color:var(--primary);box-shadow:inset 0 0 0 1px var(--primary)}\n.note{color:var(--muted);font-size:.88rem;margin:6px 0 0}\nbutton.primary{min-height:48px;padding:0 24px;border:0;border-radius:8px;background:var(--primary);color:var(--on-primary);font:inherit;font-weight:700;cursor:pointer;transition:filter .15s}\nbutton.primary:hover{filter:brightness(1.1)}\n.bar{position:sticky;bottom:0;background:var(--surface);border-top:1px solid var(--border);padding:12px 16px}\n@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}\n`;\n\nconst page = (title, body) => `<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><meta name=\"robots\" content=\"noindex\"><title>${esc(title)}</title><style>${BASE_CSS}</style></head><body>${body}</body></html>`;\n\nfunction renderReviewPage(ctx) {\n  const { batch, drafts, submitUrl, dataLabel } = ctx;\n  const ready = drafts.filter(d => d.status === 'pending_review');\n  const blocked = drafts.filter(d => d.status === 'blocked');\n  const failed = drafts.filter(d => d.status === 'failed');\n\n  const card = d => {\n    const head = `<div class=\"row\"><div><h2>${esc(d.contact_name)}</h2><p class=\"sub\">${esc(d.email || '')}${d.company ? ' · ' + esc(d.company) : ''}</p></div>\n      <div><span class=\"pill warn\">Touch ${esc(d.touch)} · ${d.kind === 'follow_up' ? 'follow-up' : 'new'}</span></div></div>`;\n    if (d.status !== 'pending_review') {\n      return `<section class=\"card muted\" aria-label=\"${esc(d.contact_name)} (not sent)\">${head}\n        <p class=\"note\"><span class=\"pill bad\">${d.status === 'failed' ? 'Failed' : 'Blocked'}</span> ${esc(d.blocked_reason || 'no reason recorded')}. This contact will not be messaged in this batch.</p></section>`;\n    }\n    return `<section class=\"card\" aria-label=\"${esc(d.contact_name)}\">${head}\n      <label for=\"b_${esc(d.id)}\">Message to send (edit if you want)</label>\n      <textarea id=\"b_${esc(d.id)}\" name=\"b_${esc(d.id)}\" rows=\"4\">${esc(d.body_core)}</textarea>\n      <p class=\"note\">An opt-out line is added automatically. Links and price promises are not allowed. ${esc(d.send_note || '')}</p>\n      <fieldset><legend>Decision for ${esc(d.contact_name)}</legend>\n        <label class=\"choice\"><input type=\"radio\" name=\"d_${esc(d.id)}\" value=\"send\" checked> Send</label>\n        <label class=\"choice\"><input type=\"radio\" name=\"d_${esc(d.id)}\" value=\"skip\"> Skip</label>\n      </fieldset></section>`;\n  };\n\n  const body = `<a class=\"skip\" href=\"#review\">Skip to review</a>\n<header class=\"top\"><div class=\"wrap\">\n  <div class=\"row\"><h1>Review revival batch</h1>${dataLabel ? `<span class=\"banner\">${esc(dataLabel)}</span>` : ''}</div>\n  <p class=\"sub\">Batch <span class=\"mono\">${esc(batch.batch_id)}</span> · expires ${esc(batch.expires_at)}. Nothing is sent until you submit. Anything you skip, or leave unclear, is not sent.</p>\n  <div class=\"chips\" role=\"list\"><span class=\"chip\" role=\"listitem\">${ready.length} ready</span><span class=\"chip\" role=\"listitem\">${blocked.length + failed.length} blocked or failed</span><span class=\"chip\" role=\"listitem\">${drafts.length} total</span></div>\n</div></header>\n<main id=\"review\" class=\"wrap\">\n  ${ready.length ? `<form method=\"post\" action=\"${esc(submitUrl)}\"><input type=\"hidden\" name=\"batch\" value=\"${esc(batch.batch_id)}\"><input type=\"hidden\" name=\"token\" value=\"${esc(batch.token)}\">\n    ${drafts.map(card).join('')}\n    <div class=\"bar\"><div class=\"wrap row\"><span class=\"note\">${ready.length} message${ready.length === 1 ? '' : 's'} to decide.</span><button class=\"primary\" type=\"submit\">Submit decisions</button></div></div></form>`\n    : `${drafts.map(card).join('')}<p class=\"card\">There is nothing to send in this batch.</p>`}\n</main>`;\n  return page('Review revival batch', body);\n}\n\n// form: body del POST (claves d_<id> y b_<id>). Devuelve una decisión por cada borrador PENDIENTE del lote; nada más.\nfunction applyReview(drafts, form, finalize) {\n  const decisions = [];\n  const summary = { approved: 0, skipped: 0, edited: 0, rejected_edits: [] };\n  for (const d of drafts.filter(x => x.status === 'pending_review')) {\n    const wantsSend = form[`d_${d.id}`] === 'send';\n    const raw = form[`b_${d.id}`];\n    const core = (typeof raw === 'string' ? raw.replace(/\\r\\n?/g, '\\n').trim() : String(d.body_core || '').trim());\n    const skip = (reason) => { decisions.push({ id: d.id, status: 'skipped', body_core: d.body_core, body: d.body || null, edited: false, reason }); summary.skipped++; };\n\n    if (!wantsSend) { skip('owner_skipped'); continue; }\n    if (!core) { skip('empty_message'); continue; }\n    if (core.length > 2000) { summary.rejected_edits.push({ id: d.id, name: d.contact_name, reason: 'edit_rejected:too_long' }); skip('edit_rejected:too_long'); continue; }\n    const f = finalize(core);\n    if (!f.ok) { const reason = `edit_rejected:${f.issues.join(',')}`; summary.rejected_edits.push({ id: d.id, name: d.contact_name, reason }); skip(reason); continue; }\n    const edited = core !== String(d.body_core || '').trim();\n    decisions.push({ id: d.id, status: 'approved', body_core: core, body: f.text, edited, reason: null });\n    summary.approved++;\n    if (edited) summary.edited++;\n  }\n  return { decisions, summary };\n}\n\nfunction renderResultPage(summary, dataLabel) {\n  const rej = summary.rejected_edits || [];\n  const body = `<a class=\"skip\" href=\"#main\">Skip to content</a>\n<header class=\"top\"><div class=\"wrap\"><div class=\"row\"><h1>Decisions recorded</h1>${dataLabel ? `<span class=\"banner\">${esc(dataLabel)}</span>` : ''}</div>\n<p class=\"sub\">The approved messages are being sent now, inside each contact's local sending hours.</p></div></header>\n<main id=\"main\" class=\"wrap\">\n  <div class=\"chips\"><span class=\"chip\"><span class=\"pill ok\">${esc(summary.approved)}</span> approved</span><span class=\"chip\">${esc(summary.edited)} edited</span><span class=\"chip\">${esc(summary.skipped)} skipped</span></div>\n  ${rej.length ? `<div class=\"card\"><h2>Edits that were not accepted</h2><p class=\"note\">These messages were skipped because the edited text broke a safety rule (links, price or guarantee promises, or length).</p><ul>${rej.map(r => `<li>${esc(r.name)} — <span class=\"mono\">${esc(r.reason)}</span></li>`).join('')}</ul></div>` : ''}\n  <p class=\"note\">You can close this page.</p>\n</main>`;\n  return page('Decisions recorded', body);\n}\n\nfunction renderMessagePage({ title, message }) {\n  return page(title, `<main class=\"wrap\"><div class=\"card\"><h1>${esc(title)}</h1><p>${esc(message)}</p></div></main>`);\n}\n\nmodule.exports = { esc, BASE_CSS, page, renderReviewPage, applyReview, renderResultPage, renderMessagePage };\n\n  __libs['review'] = module.exports;\n  return module.exports;\n})();\nconst {  } = (() => {\n  const module = { exports: {} };\n// CRM ↔ Sheets Sync: lógica 100 % determinística (sin IA). Planifica; no escribe nada.\r\n// Reglas: nunca se borra ni se propaga un borrado; un cambio en un solo lado se copia; un cambio distinto en los DOS lados es un\r\n// conflicto y no se toca ninguno; los casos dudosos (mismo teléfono, nombres distintos) se reportan y NO se fusionan.\r\nconst FIELDS = ['name', 'email', 'phone', 'company', 'stage'];\r\n\r\nconst fold = s => String(s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\\s+/g, ' ').trim();\r\n\r\nfunction normEmail(v) {\r\n  const e = String(v ?? '').trim().toLowerCase();\r\n  return /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(e) ? e : '';\r\n}\r\n\r\n// Misma regla que norm_phone() en SQL: menos de 8 dígitos = no es un teléfono.\r\nfunction normPhone(v, cc = '57') {\r\n  const s = String(v ?? '').trim();\r\n  const d = s.replace(/[^0-9]/g, '');\r\n  if (d.length < 8) return '';\r\n  if (s.startsWith('+') || d.length >= 11) return '+' + d;\r\n  return '+' + cc + d;\r\n}\r\n\r\n// Similitud de nombres: Jaccard de palabras, ignorando mayúsculas y tildes. Vacío = 0.\r\nfunction nameSimilarity(a, b) {\r\n  const ta = new Set(fold(a).split(' ').filter(Boolean));\r\n  const tb = new Set(fold(b).split(' ').filter(Boolean));\r\n  if (!ta.size || !tb.size) return 0;\r\n  let inter = 0;\r\n  for (const t of ta) if (tb.has(t)) inter++;\r\n  return inter / (ta.size + tb.size - inter);\r\n}\r\n\r\n// Forma canónica para COMPARAR (nunca para mostrar): evita falsos conflictos por mayúsculas, espacios o formato de teléfono.\r\nconst canon = (field, v, cc) => field === 'email' ? normEmail(v) : field === 'phone' ? normPhone(v, cc) : fold(v);\r\n// Forma para ESCRIBIR en el otro sistema.\r\nconst outValue = (field, v, cc) => field === 'email' ? normEmail(v) : field === 'phone' ? normPhone(v, cc) : String(v ?? '').replace(/\\s+/g, ' ').trim();\r\n\r\nconst createdId = (side, fromId) => (side === 'crm' ? 'crm-from-' : 'row-from-') + fromId;\r\n\r\nfunction planSync({ crm = [], sheet = [], links = [], defaultCountry = '57', nameThreshold = 0.5 } = {}) {\r\n  const cc = defaultCountry;\r\n  const plan = {\r\n    creates: { crm: [], sheet: [] },\r\n    updates: { crm: [], sheet: [] },\r\n    new_links: [],\r\n    base_updates: [],\r\n    duplicates: [],\r\n    conflicts: [],\r\n    issues: [],\r\n    changes: [],\r\n    stats: {},\r\n  };\r\n  const seenKeys = new Set();\r\n  // Una incidencia por clave: la misma pareja puede detectarse desde ambos lados.\r\n  const issue = (kind, key, detail) => { if (seenKeys.has(key)) return; seenKeys.add(key); plan.issues.push({ kind, key, detail }); };\r\n  const keyOf = (...p) => p.join(':');\r\n  const pairKey = (kind, side, a, b) => keyOf(kind, side, ...[a, b].sort());\r\n\r\n  const prep = (side, rows) => {\r\n    const ok = [];\r\n    for (const r of [...rows].sort((a, b) => String(a.id).localeCompare(String(b.id)))) {\r\n      const n = { ...r, id: String(r.id), _email: normEmail(r.email), _phone: normPhone(r.phone, cc) };\r\n      if (!n._email && !n._phone) { issue('invalid_record', keyOf('invalid', side, n.id), { side, id: n.id, reason: 'no_valid_email_or_phone' }); continue; }\r\n      ok.push(n);\r\n    }\r\n    return ok;\r\n  };\r\n\r\n  const linkedCrm = new Set(links.map(l => String(l.crm_id)));\r\n  const linkedSheet = new Set(links.map(l => String(l.sheet_id)));\r\n\r\n  // ── 1) Duplicados dentro de un mismo lado ──\r\n  const dedupe = (side, rows, linkedSet) => {\r\n    const parent = new Map(rows.map(r => [r.id, r.id]));\r\n    const find = x => { while (parent.get(x) !== x) { parent.set(x, parent.get(parent.get(x))); x = parent.get(x); } return x; };\r\n    const union = (a, b) => { const ra = find(a), rb = find(b); if (ra !== rb) parent.set(rb, ra); };\r\n    const reason = new Map();\r\n    for (let i = 0; i < rows.length; i++) for (let j = i + 1; j < rows.length; j++) {\r\n      const a = rows[i], b = rows[j];\r\n      if (a._email && a._email === b._email) { union(a.id, b.id); reason.set(b.id, 'same_email'); }\r\n      else if (a._phone && a._phone === b._phone) {\r\n        if (nameSimilarity(a.name, b.name) >= nameThreshold) { union(a.id, b.id); reason.set(b.id, 'same_phone_similar_name'); }\r\n        else issue('possible_duplicate', pairKey('dup', side, a.id, b.id), { side, ids: [a.id, b.id], reason: 'same_phone_different_name' });\r\n      }\r\n    }\r\n    const groups = new Map();\r\n    for (const r of rows) { const g = find(r.id); groups.set(g, [...(groups.get(g) || []), r]); }\r\n    const active = [];\r\n    for (const members of groups.values()) {\r\n      if (members.length === 1) { active.push(members[0]); continue; }\r\n      const linked = members.filter(m => linkedSet.has(m.id));\r\n      if (linked.length > 1) {\r\n        issue('possible_duplicate', keyOf('dup-linked', side, ...members.map(m => m.id).sort()), { side, ids: members.map(m => m.id), reason: 'several_linked_records' });\r\n        active.push(...members);\r\n        continue;\r\n      }\r\n      const canonical = linked[0] || members[0];\r\n      active.push(canonical);\r\n      for (const m of members) if (m !== canonical) plan.duplicates.push({ side, id: m.id, canonical: canonical.id, reason: reason.get(m.id) || 'same_email' });\r\n    }\r\n    return active;\r\n  };\r\n\r\n  const crmA = dedupe('crm', prep('crm', crm), linkedCrm);\r\n  const sheetA = dedupe('sheet', prep('sheet', sheet), linkedSheet);\r\n  const crmById = new Map(crmA.map(r => [r.id, r]));\r\n  const sheetById = new Map(sheetA.map(r => [r.id, r]));\r\n\r\n  // ── 2) Pares ya vinculados: fusión de tres vías contra el último valor sincronizado ──\r\n  const mergePair = (c, s, base, upd, linkRef) => {\r\n    const newBase = { ...base };\r\n    const toSheet = {}, toCrm = {};\r\n    for (const f of FIELDS) {\r\n      const cv = canon(f, c[f], cc), sv = canon(f, s[f], cc), bv = base[f] ?? '';\r\n      if (cv === sv) { newBase[f] = cv; continue; }\r\n      const crmChanged = cv !== bv, sheetChanged = sv !== bv;\r\n      if (crmChanged && sheetChanged) {\r\n        plan.conflicts.push({ crm_id: c.id, sheet_id: s.id, field: f, crm_value: String(c[f] ?? ''), sheet_value: String(s[f] ?? ''), base_value: bv, crm_updated_at: c.updated_at ?? null, sheet_updated_at: s.updated_at ?? null });\r\n      } else if (crmChanged) {\r\n        if (cv === '') issue('blank_ignored', keyOf('blank', linkRef, f, 'crm'), { field: f, crm_id: c.id, sheet_id: s.id, side: 'crm' });\r\n        else { toSheet[f] = outValue(f, c[f], cc); newBase[f] = cv; }\r\n      } else if (sheetChanged) {\r\n        if (sv === '') issue('blank_ignored', keyOf('blank', linkRef, f, 'sheet'), { field: f, crm_id: c.id, sheet_id: s.id, side: 'sheet' });\r\n        else { toCrm[f] = outValue(f, s[f], cc); newBase[f] = sv; }\r\n      }\r\n    }\r\n    if (Object.keys(toSheet).length) {\r\n      plan.updates.sheet.push({ id: s.id, fields: toSheet, expected_updated_at: s.updated_at ?? null });\r\n      for (const [f, v] of Object.entries(toSheet)) plan.changes.push({ side: 'sheet', action: 'update', entity_id: s.id, field: f, old_value: String(s[f] ?? ''), new_value: v, source_id: c.id });\r\n    }\r\n    if (Object.keys(toCrm).length) {\r\n      plan.updates.crm.push({ id: c.id, fields: toCrm, expected_updated_at: c.updated_at ?? null });\r\n      for (const [f, v] of Object.entries(toCrm)) plan.changes.push({ side: 'crm', action: 'update', entity_id: c.id, field: f, old_value: String(c[f] ?? ''), new_value: v, source_id: s.id });\r\n    }\r\n    return newBase;\r\n  };\r\n\r\n  for (const l of [...links].sort((a, b) => Number(a.link_id) - Number(b.link_id))) {\r\n    const c = crmById.get(String(l.crm_id)), s = sheetById.get(String(l.sheet_id));\r\n    if (!c || !s) { issue('orphan_link', keyOf('orphan', l.link_id), { link_id: l.link_id, crm_id: l.crm_id, sheet_id: l.sheet_id, missing: !c && !s ? 'both' : !c ? 'crm' : 'sheet' }); continue; }\r\n    const base = l.base || {};\r\n    const newBase = mergePair(c, s, base, null, String(l.link_id));\r\n    if (FIELDS.some(f => (newBase[f] ?? '') !== (base[f] ?? ''))) plan.base_updates.push({ link_id: l.link_id, base: newBase });\r\n  }\r\n\r\n  // ── 3) Registros sin vínculo: emparejar, retener o crear ──\r\n  const freeCrm = crmA.filter(r => !linkedCrm.has(r.id));\r\n  const freeSheet = sheetA.filter(r => !linkedSheet.has(r.id));\r\n  const taken = new Set();\r\n  const pairs = [];\r\n  for (const c of freeCrm) {\r\n    let m = c._email ? freeSheet.find(s => !taken.has(s.id) && s._email === c._email) : null;\r\n    if (!m && c._phone) m = freeSheet.find(s => !taken.has(s.id) && s._phone === c._phone && nameSimilarity(c.name, s.name) >= nameThreshold);\r\n    if (m) { taken.add(m.id); pairs.push([c, m]); }\r\n  }\r\n  const pairedCrm = new Set(pairs.map(p => p[0].id));\r\n  for (const [c, s] of pairs) {\r\n    const base = {};\r\n    for (const f of FIELDS) { const cv = canon(f, c[f], cc), sv = canon(f, s[f], cc); base[f] = cv === sv ? cv : ''; }\r\n    const nb = mergePair(c, s, base, null, `new:${c.id}:${s.id}`);\r\n    plan.new_links.push({ crm_id: c.id, sheet_id: s.id, base: nb, how: c._email && c._email === s._email ? 'email' : 'phone_and_name' });\r\n  }\r\n\r\n  const heldCrm = new Set(), heldSheet = new Set();\r\n  const hold = (c, s, reason) => { heldCrm.add(c.id); heldSheet.add(s.id); issue('possible_duplicate', pairKey('dup-x', 'crm-sheet', c.id, s.id), { crm_id: c.id, sheet_id: s.id, reason }); };\r\n  const looksSame = (a, b) => (a._email && a._email === b._email) || (a._phone && a._phone === b._phone);\r\n  for (const c of freeCrm) {\r\n    if (pairedCrm.has(c.id)) continue;\r\n    for (const s of sheetA) if (looksSame(c, s)) hold(c, s, c._email && c._email === s._email ? 'same_email_other_record_linked' : 'same_phone_different_name');\r\n  }\r\n  for (const s of freeSheet) {\r\n    if (taken.has(s.id)) continue;\r\n    for (const c of crmA) if (looksSame(c, s)) hold(c, s, c._email && c._email === s._email ? 'same_email_other_record_linked' : 'same_phone_different_name');\r\n  }\r\n\r\n  const fieldsOf = r => Object.fromEntries(FIELDS.map(f => [f, outValue(f, r[f], cc)]));\r\n  const baseOf = r => Object.fromEntries(FIELDS.map(f => [f, canon(f, r[f], cc)]));\r\n  for (const c of freeCrm) if (!pairedCrm.has(c.id) && !heldCrm.has(c.id)) {\r\n    plan.creates.sheet.push({ new_id: createdId('sheet', c.id), from_id: c.id, fields: fieldsOf(c), base: baseOf(c) });\r\n    plan.new_links.push({ crm_id: c.id, sheet_id: createdId('sheet', c.id), base: baseOf(c), how: 'created_in_sheet' });\r\n  }\r\n  for (const s of freeSheet) if (!taken.has(s.id) && !heldSheet.has(s.id)) {\r\n    plan.creates.crm.push({ new_id: createdId('crm', s.id), from_id: s.id, fields: fieldsOf(s), base: baseOf(s) });\r\n    plan.new_links.push({ crm_id: createdId('crm', s.id), sheet_id: s.id, base: baseOf(s), how: 'created_in_crm' });\r\n  }\r\n\r\n  for (const c of plan.creates.sheet) plan.changes.push({ side: 'sheet', action: 'create', entity_id: c.new_id, field: null, old_value: null, new_value: JSON.stringify(c.fields), source_id: c.from_id });\r\n  for (const c of plan.creates.crm) plan.changes.push({ side: 'crm', action: 'create', entity_id: c.new_id, field: null, old_value: null, new_value: JSON.stringify(c.fields), source_id: c.from_id });\r\n  for (const d of plan.duplicates) plan.changes.push({ side: d.side, action: 'mark_duplicate', entity_id: d.id, field: 'merged_into', old_value: null, new_value: d.canonical, source_id: d.reason });\r\n\r\n  const n = k => plan.issues.filter(i => i.kind === k).length;\r\n  plan.stats = {\r\n    crm_records: crmA.length, sheet_records: sheetA.length, links: links.length,\r\n    created_in_crm: plan.creates.crm.length, created_in_sheet: plan.creates.sheet.length,\r\n    updated_in_crm: plan.updates.crm.length, updated_in_sheet: plan.updates.sheet.length,\r\n    new_links: plan.new_links.length, duplicates_marked: plan.duplicates.length, conflicts: plan.conflicts.length,\r\n    invalid: n('invalid_record'), possible_duplicates: n('possible_duplicate'), orphan_links: n('orphan_link'), blank_ignored: n('blank_ignored'),\r\n  };\r\n  plan.writes = plan.stats.created_in_crm + plan.stats.created_in_sheet + plan.stats.updated_in_crm + plan.stats.updated_in_sheet + plan.base_updates.length + plan.duplicates.length;\r\n  return plan;\r\n}\r\n\r\n// Qué hacer con un conflicto según la decisión de la persona. 'pending' (o cualquier otra cosa) no toca nada: falla cerrado.\r\nfunction resolveChoice(conflict, choice) {\r\n  if (choice === 'crm') return { action: 'copy', write_to: 'sheet', value: outValue(conflict.field, conflict.crm_value), base: canon(conflict.field, conflict.crm_value) };\r\n  if (choice === 'sheet') return { action: 'copy', write_to: 'crm', value: outValue(conflict.field, conflict.sheet_value), base: canon(conflict.field, conflict.sheet_value) };\r\n  return { action: 'none' };\r\n}\r\n\r\nconst FIELD_LABEL = { name: 'Name', email: 'Email', phone: 'Phone', company: 'Company', stage: 'Stage' };\r\nconst KIND_LABEL = { invalid_record: 'Invalid record (no valid email or phone)', possible_duplicate: 'Possible duplicate (not merged)', orphan_link: 'Linked record missing on one side (nothing deleted)', blank_ignored: 'Field cleared on one side (not copied)' };\r\n\r\nfunction describeIssue(i) {\r\n  const d = i.detail || {};\r\n  if (i.kind === 'invalid_record') return `${d.side} ${d.id}: ${d.reason}`;\r\n  if (i.kind === 'possible_duplicate') return d.side ? `${d.side} ${d.ids.join(' & ')}: ${d.reason}` : `crm ${d.crm_id} & sheet ${d.sheet_id}: ${d.reason}`;\r\n  if (i.kind === 'orphan_link') return `link ${d.link_id}: missing on ${d.missing} (crm ${d.crm_id}, sheet ${d.sheet_id})`;\r\n  return `${d.field} cleared on ${d.side} (crm ${d.crm_id}, sheet ${d.sheet_id})`;\r\n}\r\n\r\n// Email de aviso: solo lo NUEVO (incidencias y conflictos recién vistos). Texto plano + HTML escapado.\r\nfunction buildNotice({ stats, newIssues = [], newConflicts = [], reviewLink = null, dataLabel = '' }) {\r\n  const esc = v => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\r\n  const lines = [dataLabel, '', `Sync run: ${stats.created_in_crm + stats.created_in_sheet} created, ${stats.updated_in_crm + stats.updated_in_sheet} updated, ${stats.duplicates_marked} duplicate(s) marked.`, ''];\r\n  if (newConflicts.length) {\r\n    lines.push(`${newConflicts.length} new conflict(s) - both systems changed the same field; nothing was overwritten:`);\r\n    for (const c of newConflicts.slice(0, 20)) lines.push(`  - ${FIELD_LABEL[c.field] || c.field} (crm ${c.crm_id} / sheet ${c.sheet_id}): CRM \"${c.crm_value}\" vs Sheet \"${c.sheet_value}\"`);\r\n    if (reviewLink) lines.push('', `Resolve them here: ${reviewLink}`);\r\n    lines.push('');\r\n  }\r\n  if (newIssues.length) {\r\n    lines.push(`${newIssues.length} new item(s) need a look:`);\r\n    for (const i of newIssues.slice(0, 20)) lines.push(`  - ${KIND_LABEL[i.kind] || i.kind}: ${describeIssue(i)}`);\r\n    lines.push('');\r\n  }\r\n  const html = `<p>${esc(dataLabel)}</p><p>Sync run: <b>${stats.created_in_crm + stats.created_in_sheet}</b> created, <b>${stats.updated_in_crm + stats.updated_in_sheet}</b> updated, <b>${stats.duplicates_marked}</b> duplicate(s) marked.</p>`\r\n    + (newConflicts.length ? `<p><b>${newConflicts.length}</b> new conflict(s): both systems changed the same field and nothing was overwritten.</p><ul>${newConflicts.slice(0, 20).map(c => `<li>${esc(FIELD_LABEL[c.field] || c.field)}: CRM \"${esc(c.crm_value)}\" vs Sheet \"${esc(c.sheet_value)}\"</li>`).join('')}</ul>${reviewLink ? `<p><a href=\"${esc(reviewLink)}\" style=\"display:inline-block;padding:12px 22px;background:#1e40af;color:#ffffff;border-radius:8px;text-decoration:none;font-weight:700\">Resolve conflicts</a></p>` : ''}` : '')\r\n    + (newIssues.length ? `<p><b>${newIssues.length}</b> new item(s) need a look:</p><ul>${newIssues.slice(0, 20).map(i => `<li>${esc(KIND_LABEL[i.kind] || i.kind)}: ${esc(describeIssue(i))}</li>`).join('')}</ul>` : '');\r\n  return { text: lines.join('\\n'), html };\r\n}\r\n\r\nmodule.exports = { FIELDS, FIELD_LABEL, normEmail, normPhone, nameSimilarity, canon, outValue, createdId, planSync, resolveChoice, buildNotice, describeIssue };\r\n\n  __libs['sync'] = module.exports;\n  return module.exports;\n})();\nconst { renderResolvedPage } = (() => {\n  const module = { exports: {} };\n  const require = n => __libs[String(n).replace(/^\\.\\//, '')];\n// Página de revisión de conflictos del Sync y la lógica que procesa lo que la persona decide.\n// Todo dato de CRM/hoja es no confiable: se escapa SIEMPRE. Sin elección clara = pendiente (falla cerrado, no se toca nada).\nconst { esc, page } = require('./review');\nconst { FIELD_LABEL, resolveChoice } = require('./sync');\n\nfunction renderConflictsPage({ review, conflicts, submitUrl, dataLabel }) {\n  const card = c => `<section class=\"card\" aria-label=\"${esc(FIELD_LABEL[c.field] || c.field)} conflict\">\n    <div class=\"row\"><div><h2>${esc(FIELD_LABEL[c.field] || c.field)}</h2><p class=\"sub mono\">CRM ${esc(c.crm_id)} · Sheet ${esc(c.sheet_id)}</p></div><span class=\"pill warn\">both sides changed</span></div>\n    <div class=\"chips\" role=\"list\">\n      <span class=\"chip\" role=\"listitem\"><b>CRM:</b> ${esc(c.crm_value) || '<i>(empty)</i>'}</span>\n      <span class=\"chip\" role=\"listitem\"><b>Sheet:</b> ${esc(c.sheet_value) || '<i>(empty)</i>'}</span>\n      <span class=\"chip\" role=\"listitem\"><b>Last synced:</b> ${esc(c.base_value) || '<i>(empty)</i>'}</span>\n    </div>\n    <fieldset><legend>Decision for ${esc(FIELD_LABEL[c.field] || c.field)} (${esc(c.crm_id)})</legend>\n      <label class=\"choice\"><input type=\"radio\" name=\"c_${esc(c.id)}\" value=\"crm\"> Keep the CRM value</label>\n      <label class=\"choice\"><input type=\"radio\" name=\"c_${esc(c.id)}\" value=\"sheet\"> Keep the Sheet value</label>\n      <label class=\"choice\"><input type=\"radio\" name=\"c_${esc(c.id)}\" value=\"pending\" checked> Decide later</label>\n    </fieldset></section>`;\n  return page('Sync conflicts', `<a class=\"skip\" href=\"#main\">Skip to conflicts</a>\n<header class=\"top\"><div class=\"wrap\"><span class=\"banner\">${esc(dataLabel)}</span><h1>Resolve sync conflicts</h1>\n<p class=\"sub\">Both systems changed the same field. Nothing was overwritten. Pick which value wins; it is copied to the other system. \"Decide later\" leaves it untouched.</p></div></header>\n<main id=\"main\" class=\"wrap\"><form method=\"post\" action=\"${esc(submitUrl)}\">\n<input type=\"hidden\" name=\"review\" value=\"${esc(review.review_id)}\"><input type=\"hidden\" name=\"token\" value=\"${esc(review.token)}\">\n${conflicts.length ? conflicts.map(card).join('') : '<section class=\"card\"><p>No open conflicts. Everything is in sync.</p></section>'}\n${conflicts.length ? '<div class=\"bar\"><button class=\"primary\" type=\"submit\">Apply my choices</button></div>' : ''}\n</form></main>`);\n}\n\n// Convierte el formulario en escrituras. Cada una lleva las guardas (updated_at al detectar) para no pisar una edición posterior.\nfunction buildResolution(conflicts, form) {\n  const writes = [];\n  let pending = 0;\n  for (const c of conflicts) {\n    const choice = form['c_' + c.id];\n    const r = resolveChoice(c, choice);\n    if (r.action !== 'copy') { pending++; continue; }\n    writes.push({ conflict_id: Number(c.id), choice, write_to: r.write_to, field: c.field, value: r.value, base: r.base, crm_id: c.crm_id, sheet_id: c.sheet_id, crm_updated_at: c.crm_updated_at, sheet_updated_at: c.sheet_updated_at });\n  }\n  return { writes, summary: { requested: writes.length, pending } };\n}\n\nfunction renderResolvedPage({ resolved, stale, pending, dataLabel }) {\n  return page('Sync conflicts resolved', `<header class=\"top\"><div class=\"wrap\"><span class=\"banner\">${esc(dataLabel)}</span><h1>Choices applied</h1></div></header>\n<main class=\"wrap\"><section class=\"card\"><p><span class=\"pill ok\">${esc(resolved)} resolved</span> ${stale ? `<span class=\"pill warn\">${esc(stale)} skipped: changed since detection</span>` : ''} <span class=\"pill\">${esc(pending)} left for later</span></p>\n<p class=\"note\">Resolved values were copied to the other system and recorded in the change history. Skipped conflicts stay open: the next sync run re-checks them with the fresh values.</p></section></main>`);\n}\n\nmodule.exports = { renderConflictsPage, buildResolution, renderResolvedPage };\n\n  __libs['syncreview'] = module.exports;\n  return module.exports;\n})();\n\nconst s = $('Build Resolution').item.json;\nconst r = $input.item.json;\nif (s.writes.length > 0 && Number(r.review_valid) !== 1) return { json: { ...s, applied: false, html: renderMessagePage({ title: 'Link expired', message: 'This review link expired while you were choosing. Nothing was changed.' }), http_status: 410, outcome: 'expired_race' } };\nconst resolved = Number(r.resolved);\nif (Number(r.logged) !== resolved) throw new Error('Conflict review wrote ' + resolved + ' resolutions but logged ' + r.logged + ' changes');\nconst stale = s.writes.length - resolved;\nreturn { json: { ...s, applied: true, resolved, stale, html: renderResolvedPage({ resolved, stale, pending: s.summary.pending, dataLabel: s.config.dataLabel }), http_status: 200, outcome: 'submitted' } };"
+      },
+      "id": "00000000-0000-4000-8000-000000000916",
+      "name": "Resolution Persisted",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1920,
+        560
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{ $json.html }}",
+        "options": {
+          "responseCode": "={{ $json.http_status || 200 }}",
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "text/html; charset=utf-8"
+              },
+              {
+                "name": "Content-Security-Policy",
+                "value": "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'"
+              },
+              {
+                "name": "Cache-Control",
+                "value": "no-store"
+              },
+              {
+                "name": "X-Content-Type-Options",
+                "value": "nosniff"
+              }
+            ]
+          }
+        }
+      },
+      "id": "00000000-0000-4000-8000-000000000917",
+      "name": "Respond Result",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        2160,
+        560
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO execution_log (run_id, workflow, entity_id, step, status, error, detail) VALUES ($1, $2, NULLIF($3, ''), $4, $5, NULLIF($6, ''), $7::jsonb)",
+        "options": {
+          "queryReplacement": "={{ [$execution.id, \"sync-review\", String(($json.review) ?? ''), \"review_page_shown\", $json.outcome === 'shown' ? 'ok' : 'skipped', ($json.outcome === 'shown' ? '' : $json.outcome) ?? '', JSON.stringify(({ conflicts: $json.conflicts_count ?? 0 }))] }}"
+        }
+      },
+      "id": "00000000-0000-4000-8000-000000000918",
+      "name": "Log · review_page_shown",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1200,
+        -30
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "postgresLocal01",
+          "name": "Postgres local (automations)"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000,
+      "notes": "Log de ejecución (Postgres). Rama lateral."
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO execution_log (run_id, workflow, entity_id, step, status, error, detail) VALUES ($1, $2, NULLIF($3, ''), $4, $5, NULLIF($6, ''), $7::jsonb)",
+        "options": {
+          "queryReplacement": "={{ [$execution.id, \"sync-review\", String(($json.review) ?? ''), \"review_evaluated\", $json.can_apply ? 'ok' : 'skipped', ($json.can_apply ? '' : $json.outcome) ?? '', JSON.stringify(({ summary: $json.summary ?? null }))] }}"
+        }
+      },
+      "id": "00000000-0000-4000-8000-000000000919",
+      "name": "Log · review_evaluated",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1200,
+        430
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "postgresLocal01",
+          "name": "Postgres local (automations)"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000,
+      "notes": "Log de ejecución (Postgres). Rama lateral."
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO execution_log (run_id, workflow, entity_id, step, status, error, detail) VALUES ($1, $2, NULLIF($3, ''), $4, $5, NULLIF($6, ''), $7::jsonb)",
+        "options": {
+          "queryReplacement": "={{ [$execution.id, \"sync-review\", String(($json.review) ?? ''), \"review_submitted\", $json.applied ? 'ok' : 'skipped', ($json.applied ? '' : $json.outcome) ?? '', JSON.stringify(({ resolved: $json.resolved ?? 0, stale: $json.stale ?? 0 }))] }}"
+        }
+      },
+      "id": "00000000-0000-4000-8000-000000000920",
+      "name": "Log · review_submitted",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1920,
+        430
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "postgresLocal01",
+          "name": "Postgres local (automations)"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000,
+      "notes": "Log de ejecución (Postgres). Rama lateral."
+    },
+    {
+      "parameters": {
+        "content": "## Sync · Conflict Review\nA person opens the link from the email and, for each field both systems changed, picks the CRM value, the Sheet value or \"decide later\". The chosen value is copied to the other system and the last-synced value is updated, atomically. Anything unclear stays open.",
+        "width": 2160,
+        "height": 130,
+        "color": 7
+      },
+      "id": "00000000-0000-4000-8000-000000000921",
+      "name": "Note 24",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -20,
+        -250
+      ]
+    },
+    {
+      "parameters": {
+        "content": "### Per-step log → Postgres\nNodes \"Log · …\": side branches.",
+        "width": 400,
+        "height": 90,
+        "color": 7
+      },
+      "id": "00000000-0000-4000-8000-000000000922",
+      "name": "Note 25",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -20,
+        960
+      ]
+    }
+  ],
+  "connections": {
+    "Render Conflicts": {
+      "main": [
+        [
+          {
+            "node": "Log · review_page_shown",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Respond Page",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Resolution": {
+      "main": [
+        [
+          {
+            "node": "Log · review_evaluated",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Can Apply?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resolution Persisted": {
+      "main": [
+        [
+          {
+            "node": "Log · review_submitted",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Respond Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Review Webhook": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "Parse Query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Query": {
+      "main": [
+        [
+          {
+            "node": "Query Valid?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Query Valid?": {
+      "main": [
+        [
+          {
+            "node": "Load Conflicts",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Render Invalid",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Conflicts": {
+      "main": [
+        [
+          {
+            "node": "Render Conflicts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Render Invalid": {
+      "main": [
+        [
+          {
+            "node": "Respond Page",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Submit Webhook": {
+      "main": [
+        [
+          {
+            "node": "Config (submit)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config (submit)": {
+      "main": [
+        [
+          {
+            "node": "Parse Submit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Submit": {
+      "main": [
+        [
+          {
+            "node": "Submit Valid?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Submit Valid?": {
+      "main": [
+        [
+          {
+            "node": "Load Conflicts (submit)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Render Invalid Submit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Render Invalid Submit": {
+      "main": [
+        [
+          {
+            "node": "Respond Page (submit)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Conflicts (submit)": {
+      "main": [
+        [
+          {
+            "node": "Build Resolution",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Can Apply?": {
+      "main": [
+        [
+          {
+            "node": "Persist Resolution",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Page (submit)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Persist Resolution": {
+      "main": [
+        [
+          {
+            "node": "Resolution Persisted",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/Bogota",
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all",
+    "saveManualExecutions": true,
+    "saveExecutionProgress": true,
+    "errorWorkflow": "errhandler000001"
+  },
+  "active": false,
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": false
+  }
+}
