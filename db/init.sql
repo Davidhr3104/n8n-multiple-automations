@@ -578,3 +578,81 @@ CREATE TABLE IF NOT EXISTS appt_events (
   created_at     timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS appt_events_idx ON appt_events (appointment_id);
+
+-- ───────────── Client Onboarding ─────────────
+-- Mock de las herramientas del cliente nuevo (Drive, gestor de proyectos, CRM). En live: Google Drive / Asana / GoHighLevel.
+CREATE TABLE IF NOT EXISTS onb_clients (
+  client_id     text PRIMARY KEY,
+  company       text        NOT NULL,
+  contact_name  text        NOT NULL,
+  contact_email text        NOT NULL,
+  package       text        NOT NULL,
+  amount        numeric     NOT NULL,
+  currency      text        NOT NULL,
+  start_date    date        NOT NULL,
+  notes         text,
+  status        text        NOT NULL CHECK (status IN ('contract_pending', 'awaiting_signature', 'provisioning', 'provisioning_failed', 'active', 'rejected', 'expired', 'cancelled')),
+  summary       jsonb       NOT NULL DEFAULT '{}'::jsonb,   -- requisitos del formulario (solo los fundamentados en las notas)
+  flags         jsonb       NOT NULL DEFAULT '{}'::jsonb,   -- por qué pasó por una persona
+  crm_stage     text,
+  version       integer     NOT NULL DEFAULT 1,
+  created_at    timestamptz NOT NULL DEFAULT now(),
+  updated_at    timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS onb_clients_email_idx ON onb_clients (lower(contact_email));
+CREATE INDEX IF NOT EXISTS onb_clients_company_idx ON onb_clients (lower(company));
+-- El token de firma es de un solo uso (signed_at) y caduca (expires_at). Se genera en Postgres, nunca en la IA.
+CREATE TABLE IF NOT EXISTS onb_contracts (
+  client_id    text PRIMARY KEY,
+  text         text        NOT NULL,
+  token        text        NOT NULL,
+  approved_by  text,
+  sent_at      timestamptz,
+  expires_at   timestamptz NOT NULL,
+  signed_at    timestamptz,
+  nudged_at    timestamptz,
+  escalated_at timestamptz
+);
+-- Cada paso del aprovisionamiento, uno por cliente: volver a ejecutarlo no duplica nada y deja ver cuál falló.
+CREATE TABLE IF NOT EXISTS onb_steps (
+  client_id    text NOT NULL,
+  step         text NOT NULL,
+  status       text NOT NULL CHECK (status IN ('ok', 'failed')),
+  detail       jsonb NOT NULL DEFAULT '{}'::jsonb,
+  error        text,
+  execution_id text,
+  created_at   timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (client_id, step)
+);
+CREATE TABLE IF NOT EXISTS onb_assets (client_id text PRIMARY KEY, folder text NOT NULL, created_at timestamptz NOT NULL DEFAULT now());
+CREATE TABLE IF NOT EXISTS onb_projects (project_id text PRIMARY KEY, client_id text NOT NULL UNIQUE, name text NOT NULL, status text NOT NULL DEFAULT 'active', created_at timestamptz NOT NULL DEFAULT now());
+CREATE TABLE IF NOT EXISTS onb_tasks (
+  id         bigserial PRIMARY KEY,
+  client_id  text NOT NULL,
+  title      text NOT NULL,
+  due_date   date NOT NULL,
+  owner_role text NOT NULL,
+  source     text NOT NULL,            -- template | intake
+  status     text NOT NULL DEFAULT 'open',
+  UNIQUE (client_id, title)
+);
+CREATE TABLE IF NOT EXISTS onb_outbox (
+  id         bigserial PRIMARY KEY,
+  client_id  text NOT NULL,
+  kind       text NOT NULL,            -- welcome | checkin | kickoff
+  send_after timestamptz(3) NOT NULL,
+  status     text NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'sent', 'skipped')),
+  reason     text,
+  sent_at    timestamptz,
+  UNIQUE (client_id, kind)
+);
+CREATE INDEX IF NOT EXISTS onb_outbox_due_idx ON onb_outbox (send_after) WHERE status = 'pending';
+CREATE TABLE IF NOT EXISTS onb_events (
+  id         bigserial PRIMARY KEY,
+  client_id  text NOT NULL,
+  event      text NOT NULL,
+  actor      text NOT NULL,
+  detail     jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS onb_events_client_idx ON onb_events (client_id);

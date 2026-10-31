@@ -49,6 +49,9 @@ WORKFLOWS = [
     ("25-reminders-customer-reply", "reminderreply001", "reminders-reply.json", 5),
     ("26-reminders-noshow-sweep", "remindernoshow01", "reminders-noshow.json", 3),
     ("27-reminders-staff-update", "reminderstaff0001", "reminders-staff.json", 3),
+    ("28-onboarding-start", "onboardingstart01", "onboarding-start.json", 5),
+    ("29-onboarding-signature-setup", "onboardingsign001", "onboarding-signed.json", 4),
+    ("30-onboarding-sequence", "onboardingseq0001", "onboarding-sequence.json", 3),
 ]
 
 

@@ -99,6 +99,22 @@ module.exports.SYSTEMS = [
     live: ['Real SMS / WhatsApp and the calendar (GoHighLevel / Google Calendar) are not connected: locally the SMS is an email to a test inbox.', 'Claude has not run live on free-text replies.', 'Waitlist offers do not expire on their own yet.'],
   },
   {
+    slug: 'client-onboarding', name: 'Client Onboarding',
+    problem: 'From closed deal to project kicked off, without copying data by hand.',
+    pitch: 'When a client closes, the system validates the data, the AI turns the form notes into requirements quoted from the text, and a template writes the contract. It goes out alone only if everything is standard; otherwise the account manager approves. Once signed, the folder, the project with its tasks, the CRM stage and the welcome sequence are set up step by step, and can be resumed.',
+    workflows: ['28-onboarding-start', '29-onboarding-signature-setup', '30-onboarding-sequence'],
+    shots: [['29-onboarding-signature-setup', 'canvas', 2], ['28-onboarding-start', 'execution', 1], ['30-onboarding-sequence', 'canvas', 1]],
+    flow: [
+      [['code'], 'Validate and check duplicates', 'Package, amount and dates are checked, and a client that already exists is flagged.'],
+      [['ai'], 'Read the form notes', 'The AI lists what the client asked for, each requirement quoted from their notes. Code drops anything that is not in the text.'],
+      [['code', 'person'], 'Template contract, human gate', 'A template writes the contract, never the AI. It goes out alone only if everything is standard; otherwise the account manager approves.'],
+      [['code'], 'One-time signature', 'The link only shows the contract. Signing is a POST with a one-time token that expires.'],
+      [['code'], 'Set up, step by step', 'Folder, project and tasks, CRM, welcome sequence and team notice, each idempotent and recorded. Signing again resumes what is missing.'],
+    ],
+    results: [['63/63', 'end-to-end checks'], ['12', 'unit tests on the onboarding logic'], ['1', 'signature wins when two arrive at the same time (tested)']],
+    live: ['Drive, Notion / Asana, Slack, the e-signature provider and the CRM are not connected: locally they are tables and emails to a test inbox.', 'Claude has not run live on the form notes.', 'A client stuck in provisioning waits for the signature link to be used again; there is no automatic retry yet.'],
+  },
+  {
     slug: 'invoice-processor', name: 'Invoice & Document Processor',
     problem: 'Post invoices only when every check passes.',
     pitch: 'AI reads the invoice and returns each field with the text it came from. Code verifies the evidence, the arithmetic, the dates, duplicates, the vendor’s bank account and the limit. Anything doubtful goes to a person.',

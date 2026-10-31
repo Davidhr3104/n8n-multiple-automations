@@ -2,3 +2,4 @@
 *.local.json
 audit/*.json
 node_modules/
+docs/workflows-catalog.html

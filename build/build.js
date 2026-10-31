@@ -35,6 +35,9 @@ const builders = [
   require('./workflows/reminders-reply'),
   require('./workflows/reminders-noshow'),
   require('./workflows/reminders-staff'),
+  require('./workflows/onboarding-start'),
+  require('./workflows/onboarding-signed'),
+  require('./workflows/onboarding-sequence'),
 ];
 
 fs.mkdirSync(path.join(ROOT, 'workflows'), { recursive: true });

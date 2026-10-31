@@ -47,6 +47,13 @@ module.exports.ES = {
     results: ['comprobaciones de punta a punta', 'tests unitarios de la lógica de recordatorios', 'dobles reservas cuando dos clientes eligen el mismo horario (probado)'],
     live: ['El SMS / WhatsApp reales y el calendario (GoHighLevel / Google Calendar) no están conectados: en local el SMS es un correo a un buzón de pruebas.', 'Claude no se ha ejecutado en vivo con respuestas de texto libre.', 'Las ofertas de lista de espera aún no caducan solas.'],
   },
+  'client-onboarding': {
+    problem: 'De trato cerrado a proyecto arrancado, sin copiar datos a mano.',
+    pitch: 'Cuando se cierra un cliente, el sistema valida los datos, la IA convierte las notas del formulario en requisitos citados del texto y una plantilla escribe el contrato. Sale solo únicamente si todo es estándar; si no, lo aprueba el responsable. Al firmar se preparan la carpeta, el proyecto con sus tareas, la etapa de CRM y la secuencia de bienvenida, paso a paso y de forma reanudable.',
+    flow: [['Validar y buscar duplicados', 'Se comprueban el paquete, el monto y las fechas, y se señala a un cliente que ya existe.'], ['Leer las notas del formulario', 'La IA lista lo que el cliente pidió, cada requisito citado de sus notas. El código descarta lo que no esté en el texto.'], ['Contrato por plantilla, compuerta humana', 'Una plantilla escribe el contrato, nunca la IA. Sale solo únicamente si todo es estándar; si no, lo aprueba el responsable.'], ['Firma de un solo uso', 'El enlace solo muestra el contrato. Firmar es un POST con un token de un solo uso que caduca.'], ['Preparar, paso a paso', 'Carpeta, proyecto y tareas, CRM, secuencia de bienvenida y aviso al equipo, cada uno idempotente y registrado. Volver a firmar reanuda lo que falte.']],
+    results: ['comprobaciones de punta a punta', 'tests unitarios de la lógica de onboarding', 'firma gana cuando dos llegan al mismo tiempo (probado)'],
+    live: ['Drive, Notion / Asana, Slack, el proveedor de firma electrónica y el CRM no están conectados: en local son tablas y correos a un buzón de pruebas.', 'Claude no se ha ejecutado en vivo con las notas del formulario.', 'Un cliente atascado en aprovisionamiento espera a que se vuelva a usar el enlace de firma; aún no hay reintento automático.'],
+  },
   'invoice-processor': {
     problem: 'Contabiliza facturas solo cuando pasan todas las comprobaciones.',
     pitch: 'La IA lee la factura y devuelve cada campo con el texto del que salió. El código verifica la evidencia, la aritmética, las fechas, los duplicados, la cuenta bancaria del proveedor y el límite. Lo dudoso va a una persona.',
@@ -57,6 +64,7 @@ module.exports.ES = {
 };
 
 module.exports.GUARDS = {
+  'client-onboarding': [L('A template writes the contract, never the AI', 'Una plantilla escribe el contrato, nunca la IA'), L('Anything non-standard needs the account manager before it is sent', 'Todo lo que no es estándar necesita al responsable antes de enviarse'), L('The signature link only shows the contract; signing needs a one-time token', 'El enlace de firma solo muestra el contrato; firmar exige un token de un solo uso'), L('Only requirements quoted from the client’s notes become tasks', 'Solo los requisitos citados de las notas del cliente se vuelven tareas'), L('A failed setup step is visible and signing again resumes it', 'Un paso fallido se ve y volver a firmar lo reanuda')],
   'appointment-reminders': [L('Two customers picking the same slot never double-book it', 'Dos clientes que eligen el mismo horario nunca lo reservan dos veces'), L('The AI only classifies free text; numbers and opt-outs are read by code', 'La IA solo clasifica texto libre; los números y las bajas los lee el código'), L('A failed reminder is never marked as sent: it retries and fails loudly', 'Un recordatorio fallido nunca se marca como enviado: se reintenta y falla de forma visible'), L('Repeat no-shows go to a person: nothing is blocked or charged automatically', 'Los reincidentes van a una persona: nada se bloquea ni se cobra automáticamente')],
   'crm-sync': [L('The sync never deletes a record', 'La sincronización nunca borra un registro'), L('A cleared field never overwrites the other side', 'Un campo vaciado nunca pisa el otro lado'), L('Two runs cannot collide: a lease lock and one atomic statement', 'Dos ejecuciones no pueden chocar: un candado con caducidad y una sola sentencia atómica'), L('Only new conflicts notify a person', 'Solo los conflictos nuevos avisan a una persona')],
   'lead-revival': [L('Nothing is sent before the owner reviews', 'Nada se envía antes de que el dueño revise'), L('Opt-outs are checked before the AI', 'Las bajas se revisan antes de la IA'), L('Guards are re-evaluated at send time, not trusted from the caller', 'Las reglas se reevalúan al enviar, no se confía en quien llama'), L('Each draft is sent at most once', 'Cada borrador se envía como máximo una vez')],
@@ -78,7 +86,7 @@ module.exports.PRINCIPLES_ES = [
 module.exports.UI = {
   portfolio: L('Portfolio', 'Portafolio'),
   eyebrow: L('n8n systems', 'Sistemas n8n'),
-  h1: { en: ['Seven automations you can actually ', 'audit', '.'], es: ['Siete automatizaciones que puedes ', 'auditar', ' de verdad.'] },
+  h1: { en: ['Eight automations you can actually ', 'audit', '.'], es: ['Ocho automatizaciones que puedes ', 'auditar', ' de verdad.'] },
   lead: L('Built in n8n, Postgres and Claude. In each one, code makes the decisions and AI only reads, drafts and summarizes: what a model says is checked against evidence before anything moves.', 'Construidas en n8n, Postgres y Claude. En cada una, el código toma las decisiones y la IA solo lee, redacta y resume: lo que dice un modelo se contrasta con evidencia antes de que algo se mueva.'),
   notice: L('Built and tested end to end with synthetic data in mock mode. Live accounts connect at the edges, and every system page says exactly what is still to wire up.', 'Construido y probado de punta a punta con datos sintéticos en modo simulado. Las cuentas reales se conectan en los bordes, y cada página de sistema dice exactamente qué falta por conectar.'),
   stats: [L('systems, each solving one business problem', 'sistemas, cada uno resuelve un problema de negocio'), L('n8n workflows, with real canvas captures', 'workflows de n8n, con capturas reales del canvas'), L('unit tests passing on the decision logic', 'tests unitarios pasando sobre la lógica de decisión'), L('wrong automatic replies in a 30-ticket synthetic evaluation', 'respuestas automáticas incorrectas en una evaluación sintética de 30 tickets')],
@@ -116,12 +124,12 @@ module.exports.UI = {
   altExec: L('A real n8n execution of {w}', 'Una ejecución real de n8n de {w}'),
   prev: L('Previous', 'Anterior'), next: L('Next', 'Siguiente'),
   footnote: L('Everything on this page was built and tested with synthetic data. None of it is a client result.', 'Todo lo de esta página se construyó y probó con datos sintéticos. Nada de esto es un resultado de cliente.'),
-  catalogCta: L('Browse the 7 n8n systems', 'Explorar los 7 sistemas n8n'),
+  catalogCta: L('Browse the 8 n8n systems', 'Explorar los 8 sistemas n8n'),
   ctaEyebrow: L('Next step', 'Siguiente paso'),
   ctaHeadline: L('Which one fits your problem?', '¿Cuál encaja con tu problema?'),
   ctaText: L('Tell me what is slowing your team down. On a short call we can tell whether one of these systems, or a variant of it, fixes it.', 'Cuéntame qué frena a tu equipo. En una llamada corta vemos si uno de estos sistemas, o una variante, lo resuelve.'),
   ctaButton: L('Schedule a call', 'Agendar una llamada'),
   ctaSecondary: L('Or send a message', 'O envíame un mensaje'),
   metaTitle: L('n8n systems · David Herrera', 'Sistemas n8n · David Herrera'),
-  metaDescription: L('Seven auditable automation systems built in n8n, Postgres and Claude, tested end to end with synthetic data.', 'Siete sistemas de automatización auditables construidos en n8n, Postgres y Claude, probados de punta a punta con datos sintéticos.'),
+  metaDescription: L('Eight auditable automation systems built in n8n, Postgres and Claude, tested end to end with synthetic data.', 'Ocho sistemas de automatización auditables construidos en n8n, Postgres y Claude, probados de punta a punta con datos sintéticos.'),
 };
