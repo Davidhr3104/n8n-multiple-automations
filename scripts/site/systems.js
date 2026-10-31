@@ -115,6 +115,22 @@ module.exports.SYSTEMS = [
     live: ['Drive, Notion / Asana, Slack, the e-signature provider and the CRM are not connected: locally they are tables and emails to a test inbox.', 'Claude has not run live on the form notes.', 'A client stuck in provisioning waits for the signature link to be used again; there is no automatic retry yet.'],
   },
   {
+    slug: 'sop-generator', name: 'SOP Generator',
+    problem: 'Turn how your team really works into a procedure someone can follow.',
+    pitch: 'Paste a call transcript or notes. The system redacts secrets, the AI lists the steps the text describes, and code checks that every step is quoted from it. A template writes the document, the process owner approves it, and only then is it published as a versioned page.',
+    workflows: ['31-sop-draft-review-publish', '32-sop-published-page', '33-sop-review-sweep'],
+    shots: [['31-sop-draft-review-publish', 'canvas', 2], ['31-sop-draft-review-publish', 'execution', 1], ['33-sop-review-sweep', 'canvas', 1]],
+    flow: [
+      [['code'], 'Redact and check the source', 'Passwords, API keys and card numbers are redacted before the AI or the database see the text. A text that gives orders to the system never reaches the model.'],
+      [['ai'], 'Extract the steps', 'The AI lists the steps the text describes, each with the quote it came from. Code drops any step that is not in the text.'],
+      [['code'], 'Check the quality', 'Too few steps, too many dropped, no owner, duplicates and decisions with no outcome. A weak draft goes back to its author, not to approval.'],
+      [['person'], 'The owner approves', 'A template writes the document and shows what changed against the published version. No clear answer means not published.'],
+      [['code'], 'Publish atomically', 'One statement publishes the version and replaces the old one. A late approval of an old version never overwrites a newer one.'],
+    ],
+    results: [['55/55', 'end-to-end checks'], ['15', 'unit tests on the SOP logic'], ['0', 'secrets reach the AI or the database (tested)']],
+    live: ['Notion / Google Docs / Confluence are not connected: locally the wiki is a table and a page served by n8n.', 'Claude has not run live on real transcripts, and audio is not transcribed (the system receives text).', 'To confirm a procedure is still valid, send a new version; there is no “still correct” button yet.'],
+  },
+  {
     slug: 'invoice-processor', name: 'Invoice & Document Processor',
     problem: 'Post invoices only when every check passes.',
     pitch: 'AI reads the invoice and returns each field with the text it came from. Code verifies the evidence, the arithmetic, the dates, duplicates, the vendor’s bank account and the limit. Anything doubtful goes to a person.',

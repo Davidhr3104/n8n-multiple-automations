@@ -656,3 +656,47 @@ CREATE TABLE IF NOT EXISTS onb_events (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS onb_events_client_idx ON onb_events (client_id);
+
+-- ───────────── SOP Generator ─────────────
+-- Mock de la wiki donde se publican los procedimientos. En live: Notion / Google Docs / Confluence.
+CREATE TABLE IF NOT EXISTS sop_docs (
+  sop_id               text PRIMARY KEY,
+  title                text        NOT NULL,
+  owner_email          text        NOT NULL,
+  department           text,
+  current_version      integer     NOT NULL DEFAULT 0,      -- 0 = nada publicado todavía
+  status               text        NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'published')),
+  published_at         timestamptz,
+  review_reminded_at   timestamptz,
+  review_escalated_at  timestamptz,
+  created_at           timestamptz NOT NULL DEFAULT now(),
+  updated_at           timestamptz NOT NULL DEFAULT now()
+);
+-- Cada borrador es una versión. Solo una está publicada; al aprobar otra, la anterior pasa a superseded en la misma sentencia.
+CREATE TABLE IF NOT EXISTS sop_versions (
+  sop_id              text    NOT NULL,
+  version             integer NOT NULL,
+  status              text    NOT NULL CHECK (status IN ('pending_review', 'published', 'rejected', 'needs_input', 'superseded')),
+  purpose             text,
+  steps               jsonb   NOT NULL DEFAULT '[]'::jsonb,
+  gaps                jsonb   NOT NULL DEFAULT '[]'::jsonb,
+  doc_text            text,
+  source_hash         text    NOT NULL,
+  flags               jsonb   NOT NULL DEFAULT '{}'::jsonb,
+  approved_by         text,
+  pending_reminded_at timestamptz,
+  created_at          timestamptz NOT NULL DEFAULT now(),
+  published_at        timestamptz,
+  PRIMARY KEY (sop_id, version)
+);
+CREATE INDEX IF NOT EXISTS sop_versions_pending_idx ON sop_versions (created_at) WHERE status = 'pending_review';
+CREATE TABLE IF NOT EXISTS sop_events (
+  id         bigserial PRIMARY KEY,
+  sop_id     text NOT NULL,
+  version    integer,
+  event      text NOT NULL,
+  actor      text NOT NULL,
+  detail     jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS sop_events_sop_idx ON sop_events (sop_id);

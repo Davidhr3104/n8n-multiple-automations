@@ -38,6 +38,9 @@ const builders = [
   require('./workflows/onboarding-start'),
   require('./workflows/onboarding-signed'),
   require('./workflows/onboarding-sequence'),
+  require('./workflows/sop-draft'),
+  require('./workflows/sop-view'),
+  require('./workflows/sop-sweep'),
 ];
 
 fs.mkdirSync(path.join(ROOT, 'workflows'), { recursive: true });

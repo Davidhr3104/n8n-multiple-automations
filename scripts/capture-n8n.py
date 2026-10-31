@@ -52,6 +52,9 @@ WORKFLOWS = [
     ("28-onboarding-start", "onboardingstart01", "onboarding-start.json", 5),
     ("29-onboarding-signature-setup", "onboardingsign001", "onboarding-signed.json", 4),
     ("30-onboarding-sequence", "onboardingseq0001", "onboarding-sequence.json", 3),
+    ("31-sop-draft-review-publish", "sopdraft0000001", "sop-draft.json", 5),
+    ("32-sop-published-page", "sopview00000001", "sop-view.json", 1),
+    ("33-sop-review-sweep", "sopsweep0000001", "sop-sweep.json", 3),
 ]
 
 

@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>n8n systems catalog · automation you can audit</title><meta name="description" content="Eight auditable automation systems built in n8n, Postgres and Claude, tested end to end with synthetic data.">
+<title>n8n systems catalog · automation you can audit</title><meta name="description" content="Nine auditable automation systems built in n8n, Postgres and Claude, tested end to end with synthetic data.">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:wght@500;600&family=Roboto:wght@400;500&display=swap"><link rel="stylesheet" href="assets/site.css"></head>
 <body><a class="skip" href="#main">Skip to content</a>
@@ -8,10 +8,10 @@
 <nav aria-label="Primary"><a href="index.html#systems" aria-current="page">Systems</a><a class="opt" href="index.html#principles">How they are built</a><a class="opt" href="index.html#foundation">Reliability</a></nav></div></header>
 <main id="main">
 <section class="hero"><div class="wrap"><span class="eyebrow">Automation you can audit</span>
-<h1>Eight systems that keep a person in the loop where the risk is.</h1>
+<h1>Nine systems that keep a person in the loop where the risk is.</h1>
 <p class="lead">Built in n8n, Postgres and Claude. In each one, code makes the decisions and AI only reads, drafts and summarizes: what a model says is checked against evidence before anything moves.</p>
 <div class="notice"><svg width="20" height="20" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg><p>Built and tested end to end with synthetic data in mock mode. Live accounts connect at the edges, and every system page says exactly what is still to wire up.</p></div>
-<div class="stats"><div class="stat"><b>8</b><span>systems, each solving one business problem</span></div><div class="stat"><b>30</b><span>n8n workflows, with real canvas captures</span></div><div class="stat"><b>225</b><span>unit tests passing on the decision logic</span></div><div class="stat"><b>0</b><span>wrong automatic replies in a 30-ticket synthetic evaluation</span></div></div>
+<div class="stats"><div class="stat"><b>9</b><span>systems, each solving one business problem</span></div><div class="stat"><b>33</b><span>n8n workflows, with real canvas captures</span></div><div class="stat"><b>240</b><span>unit tests passing on the decision logic</span></div><div class="stat"><b>0</b><span>wrong automatic replies in a 30-ticket synthetic evaluation</span></div></div>
 </div></section>
 <section class="block" id="systems"><div class="wrap"><header><span class="eyebrow">Choose by problem</span><h2>What do you need to fix?</h2>
 <div class="legend" aria-label="Legend"><div><span class="chip k-code"><i></i>Code decides</span> a rule or calculation decides</div><div><span class="chip k-ai"><i></i>AI reads</span> a model reads or drafts, never decides alone</div><div><span class="chip k-person"><i></i>A person</span> a human approves or resolves</div></div></header>
@@ -36,8 +36,11 @@
 <div class="meta"><span><b>4</b> workflows</span><span><b>113</b> nodes</span><span class="go">See how it works →</span></div></div></article><article class="card"><div class="thumb"><img src="img/client-onboarding-thumb.jpg" alt="n8n canvas of the Client Onboarding workflow" width="720" height="405" loading="lazy"></div>
 <div class="body"><span class="rank">07</span><h3><a href="systems/client-onboarding.html">From closed deal to project kicked off, without copying data by hand.</a></h3>
 <p>Client Onboarding: When a client closes, the system validates the data, the AI turns the form notes into requirements quoted from the text, and a template writes the contract.</p>
-<div class="meta"><span><b>3</b> workflows</span><span><b>109</b> nodes</span><span class="go">See how it works →</span></div></div></article><article class="card"><div class="thumb"><img src="img/invoice-processor-thumb.jpg" alt="n8n canvas of the Invoice &amp; Document Processor workflow" width="720" height="405" loading="lazy"></div>
-<div class="body"><span class="rank">08</span><h3><a href="systems/invoice-processor.html">Post invoices only when every check passes.</a></h3>
+<div class="meta"><span><b>3</b> workflows</span><span><b>109</b> nodes</span><span class="go">See how it works →</span></div></div></article><article class="card"><div class="thumb"><img src="img/sop-generator-thumb.jpg" alt="n8n canvas of the SOP Generator workflow" width="720" height="405" loading="lazy"></div>
+<div class="body"><span class="rank">08</span><h3><a href="systems/sop-generator.html">Turn how your team really works into a procedure someone can follow.</a></h3>
+<p>SOP Generator: Paste a call transcript or notes.</p>
+<div class="meta"><span><b>3</b> workflows</span><span><b>87</b> nodes</span><span class="go">See how it works →</span></div></div></article><article class="card"><div class="thumb"><img src="img/invoice-processor-thumb.jpg" alt="n8n canvas of the Invoice &amp; Document Processor workflow" width="720" height="405" loading="lazy"></div>
+<div class="body"><span class="rank">09</span><h3><a href="systems/invoice-processor.html">Post invoices only when every check passes.</a></h3>
 <p>Invoice &amp; Document Processor: AI reads the invoice and returns each field with the text it came from.</p>
 <div class="meta"><span><b>1</b> workflow</span><span><b>48</b> nodes</span><span class="go">See how it works →</span></div></div></article></div></div></section>
 <section class="block" id="principles"><div class="wrap"><header><span class="eyebrow">What every system shares</span><h2>Built so that you can trust what it does.</h2><p class="lead">The same six practices run through all of them. They are the reason a system can be left running.</p></header>
