@@ -424,3 +424,69 @@ CREATE TABLE IF NOT EXISTS invoice_ledger (
   posted_by      text NOT NULL,   -- auto | human
   posted_at      timestamptz NOT NULL DEFAULT now()
 );
+
+-- ───────────── Ticket Triage + SLA Watcher ─────────────
+-- Clientes por dominio del remitente (mock del CRM/helpdesk): el plan fija un PISO de prioridad que la IA no puede bajar.
+CREATE TABLE IF NOT EXISTS triage_customers (
+  domain     text PRIMARY KEY,
+  name       text NOT NULL,
+  plan       text NOT NULL CHECK (plan IN ('enterprise', 'pro', 'free')),
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+-- Equipo de soporte: la asignación elige entre activos con la habilidad de la categoría y cupo libre.
+CREATE TABLE IF NOT EXISTS triage_agents (
+  agent_id text PRIMARY KEY,
+  name     text NOT NULL,
+  email    text NOT NULL,
+  skills   text[]  NOT NULL DEFAULT '{}',
+  max_open integer NOT NULL DEFAULT 5,
+  active   boolean NOT NULL DEFAULT true
+);
+CREATE TABLE IF NOT EXISTS triage_tickets (
+  ticket_id          text PRIMARY KEY,
+  from_email         text        NOT NULL,
+  subject            text,
+  body               text,
+  received_at        timestamptz(3) NOT NULL,
+  plan               text,
+  category           text,
+  priority           text,                                  -- P1..P4 (NULL si se ignoró)
+  ai_urgency         text,
+  sentiment          text,
+  summary            text,
+  confidence         numeric,
+  evidence           jsonb       NOT NULL DEFAULT '{}'::jsonb,
+  reasons            jsonb       NOT NULL DEFAULT '[]'::jsonb,
+  human_triage       boolean     NOT NULL DEFAULT false,    -- una persona debe confirmar prioridad/asignación
+  p1_candidate       boolean     NOT NULL DEFAULT false,
+  assignee_id        text,
+  assignee_email     text,
+  first_response_due timestamptz(3),
+  resolution_due     timestamptz(3),
+  first_response_at  timestamptz(3),
+  resolved_at        timestamptz(3),
+  status             text        NOT NULL CHECK (status IN ('open', 'resolved', 'ignored')),
+  classification_model text,
+  version            integer     NOT NULL DEFAULT 1,        -- bloqueo optimista de las actualizaciones
+  execution_id       text,
+  created_at         timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS triage_tickets_open_idx ON triage_tickets (status, priority);
+CREATE INDEX IF NOT EXISTS triage_tickets_assignee_idx ON triage_tickets (assignee_id) WHERE status = 'open';
+-- Auditoría: cada cambio de un ticket queda con quién y cuándo.
+CREATE TABLE IF NOT EXISTS triage_events (
+  id         bigserial PRIMARY KEY,
+  ticket_id  text        NOT NULL,
+  event      text        NOT NULL,   -- triaged | ignored | first_response | resolved | reassigned
+  actor      text        NOT NULL,   -- 'system' o quien lo hizo
+  detail     jsonb       NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS triage_events_ticket_idx ON triage_events (ticket_id);
+-- Cada alerta de SLA se envía una vez: la clave se registra DESPUÉS de enviar (si el email falla, se reintenta).
+CREATE TABLE IF NOT EXISTS triage_sla_alerts (
+  alert_key  text PRIMARY KEY,       -- <ticket_id>|<first_response|resolution>|<warning|breached>
+  ticket_id  text        NOT NULL,
+  recipients jsonb       NOT NULL DEFAULT '[]'::jsonb,
+  sent_at    timestamptz NOT NULL DEFAULT now()
+);

@@ -1,0 +1,7 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    { "name": "n8n", "port": 5678, "url": "http://localhost:5678" },
+    { "name": "mailpit", "port": 8025, "url": "http://localhost:8025" }
+  ]
+}

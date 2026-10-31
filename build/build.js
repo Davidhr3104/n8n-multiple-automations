@@ -28,6 +28,9 @@ const builders = [
   require('./workflows/sync-review'),
   require('./workflows/sync-weekly'),
   require('./workflows/invoice-intake'),
+  require('./workflows/triage-intake'),
+  require('./workflows/triage-sla-watch'),
+  require('./workflows/triage-update'),
 ];
 
 fs.mkdirSync(path.join(ROOT, 'workflows'), { recursive: true });
